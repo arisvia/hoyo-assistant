@@ -32,10 +32,17 @@ jobs:
       - name: 🔨 Build Wheel and Sdist
         run: python -m build
 
-      - name: 🔨 Build Executable
+      - name: 🔨 Build Executable (Windows)
+        if: runner.os == 'Windows'
         run: |
           python -c "print('from hoyo_assistant.cli import main; main()', file=open('build_entry.py', 'w'))"
-          pyinstaller --onefile --name hoyo-assistant --collect-all hoyo_assistant build_entry.py
+          pyinstaller --onefile --name hoyo-assistant --collect-all hoyo_assistant --add-data "src/hoyo_assistant/locales;hoyo_assistant/locales" build_entry.py
+
+      - name: 🔨 Build Executable (Linux)
+        if: runner.os != 'Windows'
+        run: |
+          python3 -c "print('from hoyo_assistant.cli import main; main()', file=open('build_entry.py', 'w'))"
+          pyinstaller --onefile --name hoyo-assistant --collect-all hoyo_assistant --add-data "src/hoyo_assistant/locales:hoyo_assistant/locales" build_entry.py
 
       - name: 📤 Upload artifact
         uses: actions/upload-artifact@v4

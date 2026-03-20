@@ -52,13 +52,31 @@ def start_interactive_console(cfg: ServerConfig = None):
     console.clear()
     console.print(Panel(f"[bold green]{t('cli.task.server_console_title')}[/bold green]", border_style="green"))
 
+    # Print welcome message and next run time
+    console.print(f"[cyan]{t('cli.task.server_console_started', mode=cfg._mode)}[/cyan]")
+    console.print(f"[cyan]{t('cli.task.server_next_run_immediate')}[/cyan]")
+
+    # Run the first task synchronously in the main thread to ensure logs don't clash with the prompt
+    try:
+        asyncio.run(execute_task(cfg))
+    except Exception as e:
+        log.error(t("cli.task.server_exec_error", mode="initial_execution", error=str(e)))
+
+    # Wait a bit for pending logs to flush (Rich console might buffer)
+    time.sleep(0.2)
+
+    # Schedule the next run
+    cfg._next_run = time.time() + cfg.interval
+    next_dt = datetime.fromtimestamp(cfg._next_run)
+    # console.print(f"[dim]{t('cli.task.server_scheduler_next', next_run=next_dt.strftime('%Y-%m-%d %H:%M:%S'))}[/dim]")
+
     # Start scheduler thread
     scheduler_thread = threading.Thread(target=scheduler_loop, args=(cfg,), daemon=True)
     scheduler_thread.start()
 
-    # Print welcome message and next run time
-    console.print(f"[cyan]{t('cli.task.server_console_started', mode=cfg._mode)}[/cyan]")
-    console.print(f"[cyan]{t('cli.task.server_next_run_immediate')}[/cyan]")
+    # Sleep a short while to allow the scheduler thread to output its start message
+    # before we print the prompt. This avoids the race condition visually.
+    time.sleep(0.1)
 
     try:
         while cfg._running:
@@ -161,8 +179,9 @@ def scheduler_loop(cfg: ServerConfig):
 
     log.info(t("cli.task.server_scheduler_started", interval=cfg.interval, mode=cfg._mode))
 
-    # Initial run immediate
-    cfg._next_run = time.time()
+    # Next run is already scheduled by the main thread or default
+    if cfg._next_run == 0:
+        cfg._next_run = time.time()
 
     while cfg._running and not cfg._stop_event.is_set():
         now = time.time()
