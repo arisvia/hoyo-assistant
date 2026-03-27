@@ -40,19 +40,14 @@ dev = [
 ]
 
 [project.scripts]
-hoyo-cli = "hoyo_assistant.cli:main"
+hoyo-assistant = "hoyo_assistant.cli:main"
 
 [tool.pytest.ini_options]
-minversion = "6.0"
+testpaths = ["tests", "scripts"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 addopts = "-ra -q --cov=src/hoyo_assistant"
-testpaths = [
-    "tests",
-    "scripts",
-]
-python_files = [
-    "test_*.py",
-    "*_test.py",
-]
 asyncio_mode = "auto"
 
 [tool.ruff]
