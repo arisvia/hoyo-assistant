@@ -45,7 +45,7 @@ jobs:
           pyinstaller --onefile --name hoyo-assistant --collect-all hoyo_assistant --add-data "src/hoyo_assistant/locales:hoyo_assistant/locales" build_entry.py
 
       - name: 📤 Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.os }}
           path: dist/*
