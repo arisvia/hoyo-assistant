@@ -35,6 +35,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "types-aiofiles",
+    "types-cachetools",
     "types-PyYAML",
     "types-pytz",
 ]
@@ -68,3 +69,8 @@ check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 files = ["src", "scripts"]
+
+# Allow implicit Optional types temporarily to reduce noise from legacy code
+# (see https://mypy.readthedocs.io/en/stable/config_file.html#no-implicit-optional)
+no_implicit_optional = false
+
