@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-from typing import Optional
 from types import FrameType
 
 from loguru import logger
@@ -23,19 +22,27 @@ class InterceptHandler(logging.Handler):
 
         # Find caller from where originated the logged message
         # logging.currentframe() may return None in some environments; type accordingly
-        frame: Optional[FrameType] = logging.currentframe()
+        frame: FrameType | None = logging.currentframe()
         depth = 2
-        while frame is not None and getattr(frame, "f_code", None) is not None and frame.f_code.co_filename == logging.__file__:
+        while (
+            frame is not None
+            and getattr(frame, "f_code", None) is not None
+            and frame.f_code.co_filename == logging.__file__
+        ):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
-def setup_logger(log_level: str = "INFO"):
+def setup_logger(log_level: str = "INFO") -> None:
     normalized_level = str(log_level or "INFO").upper()
     if normalized_level not in VALID_LOG_LEVELS:
-        sys.stderr.write(f"Invalid HOYO_ASSISTANT_SYSTEM__LOG_LEVEL={normalized_level}, fallback to INFO\n")
+        sys.stderr.write(
+            f"Invalid HOYO_ASSISTANT_SYSTEM__LOG_LEVEL={normalized_level}, fallback to INFO\n"
+        )
         normalized_level = "INFO"
 
     # Remove default handler
@@ -51,8 +58,12 @@ def setup_logger(log_level: str = "INFO"):
     retention = os.environ.get("HOYO_ASSISTANT_LOG_RETENTION", "1 week")
 
     # Environment flags to control outputs
-    console_enable = os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower() == "true"
-    file_enable = os.environ.get("HOYO_ASSISTANT_LOG_FILE_ENABLE", "true").lower() == "true"
+    console_enable = (
+        os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower() == "true"
+    )
+    file_enable = (
+        os.environ.get("HOYO_ASSISTANT_LOG_FILE_ENABLE", "true").lower() == "true"
+    )
 
     # Add console handler with improved format
     # Business Logic logs (INFO+) shown to user. Runtime logs (DEBUG) hidden unless requested.

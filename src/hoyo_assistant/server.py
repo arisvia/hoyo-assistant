@@ -19,12 +19,17 @@ console = Console()
 
 class ServerConfig:
     def __init__(
-        self, mode: str = "multi", config_path: str | list[str] | None = None, push_config_path: str | None = None
+        self,
+        mode: str = "multi",
+        config_path: str | list[str] | None = None,
+        push_config_path: str | None = None,
     ):
         self._interval_seconds: int = 720 * 60  # 12 hours
         self._mode: str = mode  # "single" or "multi"
         # config_path may be a single path or a list in other contexts; keep runtime flexible
-        self._config_path: str | list[str] | None = config_path  # For run_once or run_multi_account
+        self._config_path: str | list[str] | None = (
+            config_path  # For run_once or run_multi_account
+        )
         self._push_config_path: str | None = push_config_path
         self._last_run: float = 0.0
         self._next_run: float = 0.0
@@ -34,15 +39,15 @@ class ServerConfig:
         self._use_env = False
 
     @property
-    def interval(self):
+    def interval(self) -> int:
         return self._interval_seconds
 
     @interval.setter
-    def interval(self, seconds: int):
+    def interval(self, seconds: int) -> None:
         self._interval_seconds = max(60, seconds)
 
 
-def start_interactive_console(cfg: ServerConfig | None = None):
+def start_interactive_console(cfg: ServerConfig | None = None) -> None:
     """
     Start the interactive server console.
     """
@@ -51,17 +56,26 @@ def start_interactive_console(cfg: ServerConfig | None = None):
 
     cfg._running = True
     console.clear()
-    console.print(Panel(f"[bold green]{t('cli.task.server_console_title')}[/bold green]", border_style="green"))
+    console.print(
+        Panel(
+            f"[bold green]{t('cli.task.server_console_title')}[/bold green]",
+            border_style="green",
+        )
+    )
 
     # Print welcome message and next run time
-    console.print(f"[cyan]{t('cli.task.server_console_started', mode=cfg._mode)}[/cyan]")
+    console.print(
+        f"[cyan]{t('cli.task.server_console_started', mode=cfg._mode)}[/cyan]"
+    )
     console.print(f"[cyan]{t('cli.task.server_next_run_immediate')}[/cyan]")
 
     # Run the first task synchronously in the main thread to ensure logs don't clash with the prompt
     try:
         asyncio.run(execute_task(cfg))
     except Exception as e:
-        log.error(t("cli.task.server_exec_error", mode="initial_execution", error=str(e)))
+        log.error(
+            t("cli.task.server_exec_error", mode="initial_execution", error=str(e))
+        )
 
     # Wait a bit for pending logs to flush (Rich console might buffer)
     time.sleep(0.2)
@@ -69,7 +83,9 @@ def start_interactive_console(cfg: ServerConfig | None = None):
     # Schedule the next run
     cfg._next_run = time.time() + cfg.interval
     next_dt = datetime.fromtimestamp(cfg._next_run)
-    # console.print(f"[dim]{t('cli.task.server_scheduler_next', next_run=next_dt.strftime('%Y-%m-%d %H:%M:%S'))}[/dim]")
+    console.print(
+        f"[dim]{t('cli.task.server_scheduler_next', next_run=next_dt.strftime('%Y-%m-%d %H:%M:%S'))}[/dim]"
+    )
 
     # Start scheduler thread
     scheduler_thread = threading.Thread(target=scheduler_loop, args=(cfg,), daemon=True)
@@ -82,7 +98,11 @@ def start_interactive_console(cfg: ServerConfig | None = None):
     try:
         while cfg._running:
             try:
-                cmd = console.input("[bold cyan]hoyo-server>[/bold cyan] ").strip().lower()
+                cmd = (
+                    console.input("[bold cyan]hoyo-server>[/bold cyan] ")
+                    .strip()
+                    .lower()
+                )
             except (EOFError, KeyboardInterrupt):
                 console.print(f"\n[yellow]{t('cli.task.server_stopping')}[/yellow]")
                 cfg._running = False
@@ -109,7 +129,9 @@ def start_interactive_console(cfg: ServerConfig | None = None):
                 parts = cmd.split()
                 if len(parts) > 1 and parts[1] in ["single", "multi"]:
                     cfg._mode = parts[1]
-                    console.print(f"[green]{t('cli.task.server_mode_set', mode=cfg._mode)}[/green]")
+                    console.print(
+                        f"[green]{t('cli.task.server_mode_set', mode=cfg._mode)}[/green]"
+                    )
                 else:
                     console.print(f"[red]{t('cli.task.server_invalid_mode')}[/red]")
             elif cmd.startswith("interval "):
@@ -123,7 +145,11 @@ def start_interactive_console(cfg: ServerConfig | None = None):
                 else:
                     console.print(f"[red]{t('cli.task.server_invalid_interval')}[/red]")
             elif cmd == "status":
-                next_run_dt = datetime.fromtimestamp(cfg._next_run) if cfg._next_run > 0 else datetime.now()
+                next_run_dt = (
+                    datetime.fromtimestamp(cfg._next_run)
+                    if cfg._next_run > 0
+                    else datetime.now()
+                )
                 # time_left can be a timedelta when computed, or a string when rendered
                 time_left: timedelta | str = next_run_dt - datetime.now()
                 if isinstance(time_left, timedelta) and time_left.total_seconds() < 0:
@@ -135,7 +161,9 @@ def start_interactive_console(cfg: ServerConfig | None = None):
 
                 last_run_str = t("cli.task.server_last_run_never")
                 if cfg._last_run > 0:
-                    last_run_str = datetime.fromtimestamp(cfg._last_run).strftime("%Y-%m-%d %H:%M:%S")
+                    last_run_str = datetime.fromtimestamp(cfg._last_run).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
 
                 console.print(
                     Panel(
@@ -153,7 +181,9 @@ def start_interactive_console(cfg: ServerConfig | None = None):
             elif cmd == "":
                 pass
             else:
-                console.print(f"[red]{t('cli.task.server_unknown_command', cmd=cmd)}[/red]")
+                console.print(
+                    f"[red]{t('cli.task.server_unknown_command', cmd=cmd)}[/red]"
+                )
 
     except Exception as e:
         log.error(t("cli.task.server_exec_error", mode="console", error=str(e)))
@@ -164,7 +194,7 @@ def start_interactive_console(cfg: ServerConfig | None = None):
         sys.exit(0)
 
 
-def print_help():
+def print_help() -> None:
     console.print(
         Panel(
             t("cli.task.server_help_body"),
@@ -173,7 +203,7 @@ def print_help():
     )
 
 
-def scheduler_loop(cfg: ServerConfig):
+def scheduler_loop(cfg: ServerConfig) -> None:
     """
     Main scheduler loop running in separate thread.
     """
@@ -181,7 +211,9 @@ def scheduler_loop(cfg: ServerConfig):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    log.info(t("cli.task.server_scheduler_started", interval=cfg.interval, mode=cfg._mode))
+    log.info(
+        t("cli.task.server_scheduler_started", interval=cfg.interval, mode=cfg._mode)
+    )
 
     # Next run is already scheduled by the main thread or default
     if cfg._next_run == 0:
@@ -197,12 +229,19 @@ def scheduler_loop(cfg: ServerConfig):
             try:
                 loop.run_until_complete(execute_task(cfg))
             except Exception as e:
-                log.error(t("cli.task.server_exec_error", mode="execution", error=str(e)))
+                log.error(
+                    t("cli.task.server_exec_error", mode="execution", error=str(e))
+                )
 
             # Schedule next run
             cfg._next_run = time.time() + cfg.interval
             next_dt = datetime.fromtimestamp(cfg._next_run)
-            log.info(t("cli.task.server_scheduler_next", next_run=next_dt.strftime("%Y-%m-%d %H:%M:%S")))
+            log.info(
+                t(
+                    "cli.task.server_scheduler_next",
+                    next_run=next_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
 
         # Sleep a bit to avoid CPU spin
         time.sleep(1)
@@ -211,7 +250,7 @@ def scheduler_loop(cfg: ServerConfig):
     log.info(t("cli.task.server_scheduler_stopped"))
 
 
-async def execute_task(cfg: ServerConfig):
+async def execute_task(cfg: ServerConfig) -> None:
     """
     Execute the task logic based on mode.
     """
