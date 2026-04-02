@@ -9,7 +9,7 @@ from .config_schema import HoyoSettings
 from .i18n import t
 from .loghelper import logger as log
 
-config: dict[str, Any] = HoyoSettings().model_dump()
+config: HoyoSettings = HoyoSettings().model_dump()
 config_raw: dict[str, Any] = deepcopy(config)
 runtime_overrides: dict[str, Any] = {}
 

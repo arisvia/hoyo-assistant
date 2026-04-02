@@ -1,8 +1,6 @@
 import asyncio
 
-from ...core import config
-from ...core.i18n import t
-from ...core.loghelper import log
+from ...core import config, log, t
 
 
 async def run_task() -> None:

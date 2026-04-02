@@ -1,3 +1,7 @@
-from .activities import run_task as run_web_activity_tasks
+"""
+Web-based activity tasks.
+"""
 
-__all__ = ["run_web_activity_tasks"]
+from .activities import run_task
+
+__all__ = ["run_task"]

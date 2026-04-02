@@ -2,12 +2,9 @@ import functools
 from collections.abc import Callable
 from typing import Any
 
-from ...core import config, tools
+from ...core import config as hoyo_config, http, log, t, tools
 from ...core.constants import API_CLOUD_GENSHIN_SIGN_OS, API_CLOUD_ZZZ_SIGN_OS
-from ...core.i18n import t
-from ...core.loghelper import log
 from ...core.models import CloudGameInfo
-from ...core.request import http
 
 CLOUD_GAMES = [
     CloudGameInfo("genshin", API_CLOUD_GENSHIN_SIGN_OS, "hk4e_global"),
@@ -16,9 +13,12 @@ CLOUD_GAMES = [
 
 
 async def clear_cookie(code: str) -> None:
-    if "cloud_games" in config.config and "os" in config.config["cloud_games"]:
-        config.config["cloud_games"]["os"].setdefault(code, {})["token"] = ""
-        await config.save_config()
+    if (
+        "cloud_games" in hoyo_config.config
+        and "os" in hoyo_config.config["cloud_games"]
+    ):
+        hoyo_config.config["cloud_games"]["os"].setdefault(code, {})["token"] = ""
+        await hoyo_config.save_config()
 
 
 class CloudGame:
@@ -96,7 +96,7 @@ class CloudGame:
 
 
 async def run_task() -> str:
-    conf = config.config["cloud_games"]["os"]
+    conf = hoyo_config.config["cloud_games"]["os"]
     log.info(t("games.cloud.start"))
     ret_msg = ""
     for game in CLOUD_GAMES:
