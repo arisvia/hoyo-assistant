@@ -77,7 +77,6 @@ class DeviceConfig(BaseConfigModel):
 
 
 class MihoyoBBSConfig(BaseConfigModel):
-    enable: bool = True
     checkin: bool = True
     checkin_list: list[int] = Field(
         default_factory=lambda: [5, 2], description="Forum IDs to checkin"
@@ -101,7 +100,6 @@ class BaseGamesConfig(BaseConfigModel):
 
 
 class GamesCNConfig(BaseGamesConfig):
-    enable: bool = True
     useragent: str = (
         "Mozilla/5.0 (Linux; Android 12; Unspecified Device) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36"
@@ -110,9 +108,9 @@ class GamesCNConfig(BaseGamesConfig):
 
 
 class GamesOSConfig(BaseGamesConfig):
-    enable: bool = False
     cookie: str = ""
     lang: str = "zh-cn"
+
 
 
 class GamesConfig(BaseConfigModel):
@@ -131,11 +129,10 @@ class BaseCloudGamesConfig(BaseConfigModel):
 
 
 class CloudGamesCNConfig(BaseCloudGamesConfig):
-    enable: bool = False
+    pass
 
 
 class CloudGamesOSConfig(BaseCloudGamesConfig):
-    enable: bool = False
     lang: str = "zh-cn"
 
 
@@ -145,8 +142,8 @@ class CloudGamesConfig(BaseConfigModel):
 
 
 class WebActivityConfig(BaseConfigModel):
-    enable: bool = False
     activities: list[str] = Field(default_factory=list)
+
 
 
 class HoyoSettings(BaseSettings):

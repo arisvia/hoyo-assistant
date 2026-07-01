@@ -93,31 +93,59 @@ async def run_miyoushe_tasks() -> tuple[str, bool]:
 
 async def run_cn_signin_tasks() -> str:
     result = []
-    if config["games"]["cn"]["enable"]:
-        # Direct call to module run_task
+    # Check if any CN game has checkin=True
+    cn_games_config = config.get("games", {}).get("cn", {})
+    cn_signin_enabled = any(
+        isinstance(val, dict) and val.get("checkin")
+        for key, val in cn_games_config.items()
+        if key not in ("useragent", "retries")
+    )
+    if cn_signin_enabled:
         result.append(await chinese.run_signin_task())
-    if config["cloud_games"]["cn"]["enable"]:
-        # Direct call to module run_task
+
+    # Check if any CN cloud game has enable=True
+    cn_cloud_config = config.get("cloud_games", {}).get("cn", {})
+    cn_cloud_enabled = any(
+        isinstance(val, dict) and val.get("enable")
+        for key, val in cn_cloud_config.items()
+    )
+    if cn_cloud_enabled:
         result.append(await chinese.run_cloud_task())
     return "\n\n".join(filter(None, result))
 
 
 async def run_os_signin_tasks() -> str:
     result = []
-    if config["games"]["os"]["enable"]:
+    # Check if any OS game has checkin=True and OS cookie is provided
+    os_games_config = config.get("games", {}).get("os", {})
+    os_cookie = os_games_config.get("cookie", "")
+    os_signin_enabled = os_cookie and any(
+        isinstance(val, dict) and val.get("checkin")
+        for key, val in os_games_config.items()
+        if key not in ("cookie", "lang")
+    )
+    if os_signin_enabled:
         os_result = await overseas.run_signin_task()
         if os_result:
             result.append(f"{t('games.os.title')}{os_result}")
 
-    if config["cloud_games"]["os"]["enable"]:
+    # Check if any OS cloud game has enable=True
+    os_cloud_config = config.get("cloud_games", {}).get("os", {})
+    os_cloud_enabled = any(
+        isinstance(val, dict) and val.get("enable")
+        for key, val in os_cloud_config.items()
+        if key != "lang"
+    )
+    if os_cloud_enabled:
         result.append(await overseas.run_cloud_task())
 
     return "\n\n".join(filter(None, result))
 
 
 async def run_web_activity_tasks() -> None:
-    # await run_web_activity_bundle()
-    if config["web_activity"]["enable"]:
+    # Check if we have web activities configured
+    web_activities = config.get("web_activity", {}).get("activities", [])
+    if web_activities:
         log.info(t("web_activity.start_msg"))
         await web.run_task()
 
