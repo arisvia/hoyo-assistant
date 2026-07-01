@@ -22,7 +22,6 @@ class ServerSettings:
 
     # public configuration fields
     config_path: str | list[str] | None = None
-    push_config_path: str | None = None
 
     # interval stored in seconds
     _interval: int = 720 * 60  # 12 hours

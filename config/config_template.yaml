@@ -1,0 +1,63 @@
+enable: true
+version: 15
+push:
+  enable: true
+  active:
+    - telegram
+    - discord
+  push_block_keys: ""
+  error_push_only: false
+  telegram:
+    api_url: "api.telegram.org"
+    bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
+    chat_id: "YOUR_TELEGRAM_CHAT_ID"
+  discord:
+    webhook: "YOUR_DISCORD_WEBHOOK_URL"
+  smtp:
+    mailhost: "smtp.example.com"
+    port: 465
+    username: "sender@example.com"
+    password: "YOUR_SMTP_PASSWORD"
+    fromaddr: "sender@example.com"
+    toaddr: "receiver@example.com"
+    subject: "HoyoAssistant Signin Report"
+    ssl_enable: true
+    background: true
+account:
+  cookie: "ltuid=xxx;ltoken=xxx;mid=xxx;cookie_token=xxx;"
+  stuid: "xxx"
+  stoken: "v2_xxx"
+  mid: "xxx"
+device:
+  name: "OnePlus Ace 5 Pro"
+  model: "PKR110"
+  id: "6a6bf449-7cb8-3df2-b3ca-0eb8aa881437"
+  fp: "38d8113b7733d"
+mihoyobbs:
+  enable: true
+  checkin: true
+  checkin_list:
+    - 2
+    - 5
+games:
+  cn:
+    enable: true
+    useragent: "Mozilla/5.0 (Linux; Android 15)"
+    retries: 3
+    genshin:
+      checkin: true
+    honkai_sr:
+      checkin: true
+    zzz:
+      checkin: true
+  os:
+    enable: false
+cloud_games:
+  cn:
+    enable: false
+  os:
+    enable: false
+competition:
+  enable: false
+web_activity:
+  enable: false

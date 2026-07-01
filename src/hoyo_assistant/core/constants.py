@@ -42,13 +42,13 @@ class StatusCode(IntEnum):
 # Business Constants (Game & BBS Logic)
 # =============================================================================
 # Salt
-MIHOYOBBS_SALT: Final[str] = "b0EofkfMKq2saWV9fwux18J5vzcFTlex"
-MIHOYOBBS_SALT_WEB: Final[str] = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"
+MIHOYOBBS_SALT: Final[str] = "47f15f1b66bee46b816115d8e8e6ebb6"
+MIHOYOBBS_SALT_WEB: Final[str] = "d9200c846b10886e8c874fc33c8f308b"
 MIHOYOBBS_SALT_X4: Final[str] = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs"
 MIHOYOBBS_SALT_X6: Final[str] = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"
 
 MIHOYOBBS_VERIFY_KEY: Final[str] = "bll8iq97cem8"
-MIHOYOBBS_VERSION: Final[str] = "2.99.1"
+MIHOYOBBS_VERSION: Final[str] = "2.109.0"
 
 # Client Type
 MIHOYOBBS_CLIENT_TYPE: Final[str] = "2"  # 1: ios, 2: android

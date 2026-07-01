@@ -3,7 +3,17 @@ import os
 import random
 from collections.abc import Iterable
 
-from ..core import CookieError, StatusCode, StokenError, config, log, push, setting, t
+from ..core import (
+    CookieError,
+    StatusCode,
+    StokenError,
+    config,
+    http,
+    log,
+    push,
+    setting,
+    t,
+)
 from .single_account import run_once
 
 
@@ -41,13 +51,14 @@ def _is_push_enabled() -> bool:
     env_enable = str(os.getenv("HOYO_ASSISTANT_PUSH__ENABLE", "")).strip().lower()
     if env_enable in {"true", "1", "on", "yes"}:
         return True
-    push_flag = str(config.get("push", "")).strip().lower()
-    return push_flag in {"true", "1", "on", "yes"}
+    push_cfg = config.get("push")
+    if isinstance(push_cfg, dict):
+        return bool(push_cfg.get("enable"))
+    return False
 
 
 async def run_multi_account(
     target_path: str | list[str] | None = None,
-    push_config_path: str | None = None,
     use_env: bool = True,
 ) -> tuple[int, str]:
     """Execute tasks for multiple config files sequentially. Each run_once() is isolated:
@@ -80,44 +91,38 @@ async def run_multi_account(
 
     results: dict[str, list[str]] = {"ok": [], "close": [], "error": [], "captcha": []}
 
-    for dir_path, file_name in config_pool:
-        log.info(t("multi.executing", file=file_name))
-        full_path = str(os.path.join(dir_path, file_name))
+    async with http:
+        for dir_path, file_name in config_pool:
+            log.info(t("multi.executing", file=file_name))
+            full_path = str(os.path.join(dir_path, file_name))
 
-        try:
-            # Call run_once with explicit config file; it handles reload and execution isolation.
-            run_code, _ = await run_once(full_path, use_env=use_env)
-        except (CookieError, StokenError) as e:
-            results["error"].append(file_name)
-            error_msg = (
-                t("multi.cookie_error")
-                if isinstance(e, CookieError)
-                else t("multi.stoken_error")
-            )
-            if _is_push_enabled():
-                if push_config_path:
-                    await push.push(
-                        StatusCode.FAILURE.value,
-                        error_msg,
-                        config_path=push_config_path,
-                    )
-                else:
-                    await push.push(StatusCode.FAILURE.value, error_msg)
-        else:
-            if run_code == StatusCode.SUCCESS.value:
-                results["ok"].append(file_name)
-            elif run_code in (
-                StatusCode.FAILURE.value,
-                StatusCode.PARTIAL_FAILURE.value,
-            ):
+            try:
+                # Call run_once with explicit config file; it handles reload and execution isolation.
+                run_code, _ = await run_once(full_path, use_env=use_env)
+            except (CookieError, StokenError) as e:
                 results["error"].append(file_name)
-            elif run_code == StatusCode.CAPTCHA_TRIGGERED.value:
-                results["captcha"].append(file_name)
+                error_msg = (
+                    t("multi.cookie_error")
+                    if isinstance(e, CookieError)
+                    else t("multi.stoken_error")
+                )
+                if _is_push_enabled():
+                    await push.push(StatusCode.FAILURE.value, error_msg)
             else:
-                results["close"].append(file_name)
+                if run_code == StatusCode.SUCCESS.value:
+                    results["ok"].append(file_name)
+                elif run_code in (
+                    StatusCode.FAILURE.value,
+                    StatusCode.PARTIAL_FAILURE.value,
+                ):
+                    results["error"].append(file_name)
+                elif run_code == StatusCode.CAPTCHA_TRIGGERED.value:
+                    results["captcha"].append(file_name)
+                else:
+                    results["close"].append(file_name)
 
-        log.info(t("multi.exec_done", file=file_name))
-        await asyncio.sleep(random.randint(3, 10))
+            log.info(t("multi.exec_done", file=file_name))
+            await asyncio.sleep(random.randint(3, 10))
 
     push_message = t(
         "multi.summary",

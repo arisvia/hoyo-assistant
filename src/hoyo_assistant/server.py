@@ -234,13 +234,11 @@ async def execute_task(cfg: ServerSettings) -> None:
                 target_path = cfg_path
             status_code, msg = await run_single_account(
                 config_path=target_path,
-                push_config_path=cfg.push_config_path,
                 use_env=cfg.use_env,
             )
         else:
             status_code, msg = await run_multi_account(
                 target_path=cfg.config_path,
-                push_config_path=cfg.push_config_path,
                 use_env=cfg.use_env,
             )
     except Exception as e:
@@ -259,6 +257,6 @@ async def execute_task(cfg: ServerSettings) -> None:
     if push_enabled:
         # Push summary
         try:
-            await push.push(status_code, msg, config_path=cfg.push_config_path)
+            await push.push(status_code, msg)
         except Exception as e:
             log.error(t("cli.task.server_push_fail", error=e))

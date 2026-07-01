@@ -260,7 +260,7 @@ def auto_fill_config_file(filepath: str, backup: bool = True) -> tuple[bool, str
 
         # Create settings object (this validates and fills defaults)
         settings = HoyoSettings(**original_data)
-        filled_data = settings.model_dump()
+        filled_data = settings.model_dump(exclude_defaults=True)
 
         # Check if anything was filled
         if original_data == filled_data:

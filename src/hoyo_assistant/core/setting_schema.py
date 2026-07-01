@@ -19,11 +19,54 @@ def coerce_to_str(v: Any) -> str:
 CoercedStr = Annotated[str, BeforeValidator(coerce_to_str)]
 
 
+class PushConfig(BaseModel):
+    model_config = {"extra": "allow"}
+    enable: bool = Field(default=False)
+    active: list[str] = Field(default_factory=list)
+    push_block_keys: str = Field(default="")
+    error_push_only: bool = Field(default=False)
+    telegram: dict[str, Any] | None = Field(default=None)
+    pushplus: dict[str, Any] | None = Field(default=None)
+    pushme: dict[str, Any] | None = Field(default=None)
+    cqhttp: dict[str, Any] | None = Field(default=None)
+    smtp: dict[str, Any] | None = Field(default=None)
+    wecom: dict[str, Any] | None = Field(default=None)
+    wecomrobot: dict[str, Any] | None = Field(default=None)
+    pushdeer: dict[str, Any] | None = Field(default=None)
+    dingrobot: dict[str, Any] | None = Field(default=None)
+    feishubot: dict[str, Any] | None = Field(default=None)
+    bark: dict[str, Any] | None = Field(default=None)
+    gotify: dict[str, Any] | None = Field(default=None)
+    ifttt: dict[str, Any] | None = Field(default=None)
+    webhook: dict[str, Any] | None = Field(default=None)
+    qmsg: dict[str, Any] | None = Field(default=None)
+    discord: dict[str, Any] | None = Field(default=None)
+    ftqq: dict[str, Any] | None = Field(default=None)
+
+
+def coerce_push_config(v: Any) -> Any:
+    if isinstance(v, str):
+        v_lower = v.strip().lower()
+        if v_lower in {"true", "1", "on", "yes"}:
+            return {"enable": True}
+        elif v_lower in {"false", "0", "off", "no", ""}:
+            return {"enable": False}
+        else:
+            channels = [c.strip() for c in v.split(",") if c.strip()]
+            return {"enable": True, "active": channels}
+    if isinstance(v, bool):
+        return {"enable": v}
+    return v
+
+
+CoercedPush = Annotated[PushConfig, BeforeValidator(coerce_push_config)]
+
+
 class AccountConfig(BaseConfigModel):
-    cookie: str = Field("", description="MiHoYo BBS Cookie")
-    stuid: CoercedStr = Field("", description="Account STUID")
-    stoken: str = Field("", description="Account SToken")
-    mid: CoercedStr = Field("", description="Account MID")
+    cookie: str = Field(default="", description="MiHoYo BBS Cookie")
+    stuid: CoercedStr = Field(default="", description="Account STUID")
+    stoken: str = Field(default="", description="Account SToken")
+    mid: CoercedStr = Field(default="", description="Account MID")
 
 
 class DeviceConfig(BaseConfigModel):
@@ -39,10 +82,6 @@ class MihoyoBBSConfig(BaseConfigModel):
     checkin_list: list[int] = Field(
         default_factory=lambda: [5, 2], description="Forum IDs to checkin"
     )
-    read: bool = True
-    like: bool = True
-    cancel_like: bool = True
-    share: bool = True
 
 
 class GameItemConfig(BaseConfigModel):
@@ -105,20 +144,6 @@ class CloudGamesConfig(BaseConfigModel):
     os: CloudGamesOSConfig = Field(default_factory=CloudGamesOSConfig)
 
 
-class GeniusInvokationConfig(BaseConfigModel):
-    enable: bool = False
-    account: list[str] = Field(default_factory=list)
-    checkin: bool = False
-    weekly: bool = False
-
-
-class CompetitionConfig(BaseConfigModel):
-    enable: bool = False
-    genius_invokation: GeniusInvokationConfig = Field(
-        default_factory=GeniusInvokationConfig
-    )
-
-
 class WebActivityConfig(BaseConfigModel):
     enable: bool = False
     activities: list[str] = Field(default_factory=list)
@@ -127,13 +152,12 @@ class WebActivityConfig(BaseConfigModel):
 class HoyoSettings(BaseSettings):
     enable: bool = True
     version: int = 15
-    push: str = ""
-    account: AccountConfig = Field(default_factory=AccountConfig)
+    push: CoercedPush = Field(default_factory=PushConfig)
+    account: AccountConfig = Field(default_factory=lambda: AccountConfig())
     device: DeviceConfig = Field(default_factory=DeviceConfig)
     mihoyobbs: MihoyoBBSConfig = Field(default_factory=MihoyoBBSConfig)
     games: GamesConfig = Field(default_factory=GamesConfig)
     cloud_games: CloudGamesConfig = Field(default_factory=CloudGamesConfig)
-    competition: CompetitionConfig = Field(default_factory=CompetitionConfig)
     web_activity: WebActivityConfig = Field(default_factory=WebActivityConfig)
 
     model_config = SettingsConfigDict(

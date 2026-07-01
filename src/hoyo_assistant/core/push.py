@@ -3,10 +3,7 @@ import base64
 import hashlib
 import hmac
 import inspect
-import os
-import re
 import time
-from configparser import ConfigParser, NoOptionError
 from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import quote_plus
@@ -34,60 +31,33 @@ def get_push_title(status_id: int) -> str:
 
 
 class PushHandler:
-    def __init__(self, config_file: str = "push.ini") -> None:
+    def __init__(self) -> None:
         self.http = http  # Use global async http
-        self.cfg = ConfigParser()
-        # If config_file is an absolute path, use it directly.
-        # Otherwise, default to CWD/config directory.
-        if os.path.isabs(config_file):
-            self.config_path = os.path.dirname(config_file)
-            self.config_name = os.path.basename(config_file)
-        else:
-            self.config_path = os.path.join(os.getcwd(), "config")
-            self.config_name = config_file
 
-    def get_config_path(self) -> str:
-        # If config_name is already an absolute path from __init__, return it directly.
-        # This handles the case where PushHandler(config_file="/full/path/to/push.ini") is passed.
-        if os.path.isabs(self.config_name):
-            return self.config_name
+    def get_cfg(self) -> dict[str, Any]:
+        """Get the push dictionary from the global config."""
+        return setting.config.get("push", {})
 
-        file_path = self.config_path
-        cfg_path = setting.config_path
-        if cfg_path:
-            potential_dir = os.path.dirname(cfg_path)
-            if os.path.isdir(potential_dir):
-                file_path = potential_dir
-
-        return os.path.join(file_path, self.config_name)
-
-    def load_config(self) -> bool:
-        file_path = self.get_config_path()
-        if os.path.exists(file_path):
-            try:
-                self.cfg.read(file_path, encoding="utf-8")
-                return True
-            except Exception as e:
-                log.warning(t("push.read_fail", error=e))
-                return False
-        return False
+    def get_val(self, section: str, key: str, default: Any = None) -> Any:
+        """Get a value from push configuration."""
+        cfg = self.get_cfg()
+        sec_cfg = cfg.get(section)
+        if isinstance(sec_cfg, dict):
+            return sec_cfg.get(key, default)
+        return default
 
     # 推送消息中屏蔽关键词
     def msg_replace(self, msg: Any) -> str:
-        block_keys = []
-        try:
-            # self.cfg is sync ConfigParser, checking if it was loaded
-            # ConfigParser.get returns string
-            block_str = self.cfg.get("setting", "push_block_keys")
-            block_keys = block_str.split(",")
-        except Exception:
+        cfg = self.get_cfg()
+        block_str = cfg.get("push_block_keys", "")
+        if not block_str:
             return str(msg)
-        else:
-            for block_key in block_keys:
-                block_key_trim = str(block_key).strip()
-                if block_key_trim:
-                    msg = str(msg).replace(block_key_trim, "*" * len(block_key_trim))
-            return str(msg)
+        block_keys = str(block_str).split(",")
+        for block_key in block_keys:
+            block_key_trim = str(block_key).strip()
+            if block_key_trim:
+                msg = str(msg).replace(block_key_trim, "*" * len(block_key_trim))
+        return str(msg)
 
     def _build_push_payload(
         self, status_id: int, push_message: str | None
@@ -103,19 +73,13 @@ class PushHandler:
         return title, body, full_text
 
     async def telegram(self, status_id: int, push_message: str | None) -> None:
-        # Async telegram push
-        _ = self.cfg.get("telegram", "http_proxy", fallback=None)
-        # We need async get_new_session_use_proxy if we support proxy switch
-        # For now let's assume global http supports proxy env vars or is configured
-
-        # Or we can just use self.http.
-        # get_new_session_use_proxy was sync.
-
         title, body, full_text = self._build_push_payload(status_id, push_message)
-        # Simplified async version using global http
-        url = f"https://{self.cfg.get('telegram', 'api_url')}/bot{self.cfg.get('telegram', 'bot_token')}/sendMessage"
+        api_url = self.get_val("telegram", "api_url", "api.telegram.org")
+        bot_token = self.get_val("telegram", "bot_token", "")
+        chat_id = self.get_val("telegram", "chat_id", "")
+        url = f"https://{api_url}/bot{bot_token}/sendMessage"
         data = {
-            "chat_id": self.cfg.get("telegram", "chat_id"),
+            "chat_id": chat_id,
             "text": full_text,
         }
         await self.http.post(url=url, data=data)
@@ -125,10 +89,9 @@ class PushHandler:
         Server酱推送，具体推送位置在server酱后台配置
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
+        sendkey = self.get_val("ftqq", "sendkey", "")
         await self.http.post(
-            url="https://sctapi.ftqq.com/{}.send".format(
-                self.cfg.get("setting", "push_token")
-            ),
+            url=f"https://sctapi.ftqq.com/{sendkey}.send",
             data={"title": title, "desp": body},
         )
 
@@ -137,13 +100,15 @@ class PushHandler:
         PushPlus推送
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
+        token = self.get_val("pushplus", "token", "")
+        topic = self.get_val("pushplus", "topic", "")
         await self.http.post(
             url="https://www.pushplus.plus/send",
             data={
-                "token": self.cfg.get("setting", "push_token"),
+                "token": token,
                 "title": title,
                 "content": body,
-                "topic": self.cfg.get("setting", "topic"),
+                "topic": topic,
             },
         )
 
@@ -151,7 +116,7 @@ class PushHandler:
         """
         PushMe推送
         """
-        pushme_key = self.cfg.get("pushme", "token")
+        pushme_key = self.get_val("pushme", "token", "")
         if not pushme_key:
             log.error(t("push.pushme_key_missing"))
             return
@@ -165,8 +130,9 @@ class PushHandler:
             "type": "",
         }
         log.debug(f"PushMe 请求数据: {data}")
+        url = self.get_val("pushme", "url", "https://push.i-i.me/")
         response = await self.http.post(
-            url=self.cfg.get("pushme", "url", fallback="https://push.i-i.me/"),
+            url=url,
             data=data,
         )
         log.debug(f"PushMe 响应状态码: {response.status}")
@@ -181,29 +147,27 @@ class PushHandler:
         """
         OneBot V11(CqHttp)协议推送
         """
-        qq = self.cfg.get("cqhttp", "cqhttp_qq", fallback=None)
-        group = self.cfg.get("cqhttp", "cqhttp_group", fallback=None)
+        qq = self.get_val("cqhttp", "cqhttp_qq", None)
+        group = self.get_val("cqhttp", "cqhttp_group", None)
 
         if qq and group:
             log.error(t("push.cqhttp_config_err"))
             return
 
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        # use a flexible dict to allow numeric ids
         data: dict[str, Any] = {"message": full_text}
         if qq:
             data["user_id"] = int(qq)
         if group:
             data["group_id"] = int(group)
 
-        await self.http.post(url=self.cfg.get("cqhttp", "cqhttp_url"), json=data)
+        url = self.get_val("cqhttp", "cqhttp_url", "")
+        await self.http.post(url=url, json=data)
 
-    # 感谢 @islandwind 提供的随机壁纸api 个人主页：https://space.bilibili.com/7600422
     async def smtp(self, status_id: int, push_message: str | None) -> None:
         """
         SMTP 电子邮件推送
         """
-        # SMTP is typically sync via smtplib. Running it in executor is better.
         import smtplib
         from email.mime.text import MIMEText
 
@@ -212,11 +176,9 @@ class PushHandler:
         async def get_background_url() -> str:
             try:
                 resp = await self.http.get(
-                    "https://api.iw233.cn/api.php?sort=random&type=json"
+                    "https://www.loliapi.com/acg/pc/"
                 )
-                # resp.json() is untyped; cast result to expected structure
-                data = await resp.json()
-                return cast(str, data["pic"][0])
+                return cast(str, resp.url)
             except Exception:
                 log.warning(t("push.smtp_img_fail"))
                 return "unable to get the image"
@@ -235,7 +197,8 @@ class PushHandler:
             return ""
 
         image_url = None
-        if self.cfg.getboolean("smtp", "background", fallback=True):
+        background = self.get_val("smtp", "background", True)
+        if background:
             image_url = await get_background_url()
 
         def send_sync() -> None:
@@ -251,26 +214,27 @@ class PushHandler:
                 background_image=get_background_img_html(image_url),
                 background_info=get_background_img_info(image_url),
             )
-            smtp_info = self.cfg["smtp"]
             msg_mime = MIMEText(message, "html", "utf-8")
-            msg_mime["Subject"] = smtp_info["subject"]
-            msg_mime["To"] = smtp_info["toaddr"]
-            msg_mime["From"] = f"{smtp_info['subject']}<{smtp_info['fromaddr']}>"
+            subject = self.get_val("smtp", "subject", "")
+            toaddr = self.get_val("smtp", "toaddr", "")
+            fromaddr = self.get_val("smtp", "fromaddr", "")
+            msg_mime["Subject"] = subject
+            msg_mime["To"] = toaddr
+            msg_mime["From"] = f"{subject}<{fromaddr}>"
 
-            # Annotate server as the base smtplib.SMTP to allow assignment of SMTP_SSL as well.
+            mailhost = self.get_val("smtp", "mailhost", "")
+            port = int(self.get_val("smtp", "port", 0))
+            username = self.get_val("smtp", "username", "")
+            password = self.get_val("smtp", "password", "")
+
             server: smtplib.SMTP
-            if self.cfg.getboolean("smtp", "ssl_enable"):
-                server = smtplib.SMTP_SSL(
-                    smtp_info["mailhost"], self.cfg.getint("smtp", "port")
-                )
+            ssl_enable = self.get_val("smtp", "ssl_enable", False)
+            if ssl_enable:
+                server = smtplib.SMTP_SSL(mailhost, port)
             else:
-                server = smtplib.SMTP(
-                    smtp_info["mailhost"], self.cfg.getint("smtp", "port")
-                )
-            server.login(smtp_info["username"], smtp_info["password"])
-            server.sendmail(
-                smtp_info["fromaddr"], smtp_info["toaddr"], msg_mime.as_string()
-            )
+                server = smtplib.SMTP(mailhost, port)
+            server.login(username, password)
+            server.sendmail(fromaddr, toaddr, msg_mime.as_string())
             server.close()
             log.info(t("push.smtp_success"))
 
@@ -279,15 +243,10 @@ class PushHandler:
     async def wecom(self, status_id: int, push_message: str | None) -> None:
         """
         企业微信推送
-        感谢linjie5493@github 提供的代码
         """
-        secret = self.cfg.get("wecom", "secret")
-        corpid = self.cfg.get("wecom", "wechat_id")
-        try:
-            touser = self.cfg.get("wecom", "touser")
-        except NoOptionError:
-            # 没有配置时赋默认值
-            touser = "@all"
+        secret = self.get_val("wecom", "secret", "")
+        corpid = self.get_val("wecom", "wechat_id", "")
+        touser = self.get_val("wecom", "touser", "@all")
 
         _, _, full_text = self._build_push_payload(status_id, push_message)
         token_resp = await self.http.post(
@@ -296,7 +255,7 @@ class PushHandler:
         )
         push_token = (await token_resp.json())["access_token"]
         push_data = {
-            "agentid": self.cfg.get("wecom", "agentid"),
+            "agentid": self.get_val("wecom", "agentid", ""),
             "msgtype": "text",
             "touser": touser,
             "text": {"content": full_text},
@@ -312,16 +271,16 @@ class PushHandler:
         企业微信机器人
         """
         _, _, full_text = self._build_push_payload(status_id, push_message)
+        url = self.get_val("wecomrobot", "url", "")
+        mobile = self.get_val("wecomrobot", "mobile", "")
         resp = await self.http.post(
-            url=f"{self.cfg.get('wecomrobot', 'url')}",
+            url=url,
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={
                 "msgtype": "text",
                 "text": {
                     "content": full_text,
-                    "mentioned_mobile_list": [
-                        f"{self.cfg.get('wecomrobot', 'mobile')}"
-                    ],
+                    "mentioned_mobile_list": [mobile],
                 },
             },
         )
@@ -333,10 +292,12 @@ class PushHandler:
         PushDeer推送
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
+        api_url = self.get_val("pushdeer", "api_url", "")
+        token = self.get_val("pushdeer", "token", "")
         await self.http.get(
-            url=f"{self.cfg.get('pushdeer', 'api_url')}/message/push",
+            url=f"{api_url}/message/push",
             params={
-                "pushkey": self.cfg.get("pushdeer", "token"),
+                "pushkey": token,
                 "text": title,
                 "desp": str(body).replace("\r\n", "\r\n\r\n"),
                 "type": "markdown",
@@ -348,10 +309,8 @@ class PushHandler:
         钉钉群机器人推送
         """
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        api_url = self.cfg.get(
-            "dingrobot", "webhook"
-        )  # https://oapi.dingtalk.com/robot/send?access_token=XXX
-        secret = self.cfg.get("dingrobot", "secret")  # 安全设置 -> 加签 -> 密钥 -> SEC*
+        api_url = self.get_val("dingrobot", "webhook", "")
+        secret = self.get_val("dingrobot", "secret", "")
         if secret:
             timestamp = str(round(time.time() * 1000))
             sign_string = f"{timestamp}\n{secret}"
@@ -376,9 +335,7 @@ class PushHandler:
         飞书机器人(WebHook)
         """
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        api_url = self.cfg.get(
-            "feishubot", "webhook"
-        )  # https://open.feishu.cn/open-apis/bot/v2/hook/XXX
+        api_url = self.get_val("feishubot", "webhook", "")
         resp = await self.http.post(
             url=api_url,
             headers={"Content-Type": "application/json; charset=utf-8"},
@@ -392,12 +349,13 @@ class PushHandler:
         Bark推送
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
-        # make send_title and push_message to url encode
         send_title = quote_plus(title)
         push_message = quote_plus(body)
+        api_url = self.get_val("bark", "api_url", "")
+        token = self.get_val("bark", "token", "")
+        icon = self.get_val("bark", "icon", "")
         resp = await self.http.get(
-            url=f"{self.cfg.get('bark', 'api_url')}/{self.cfg.get('bark', 'token')}/{send_title}/{push_message}?"
-            f"icon=https://cdn.jsdelivr.net/gh/tanmx/pic@main/mihoyo/{self.cfg.get('bark', 'icon')}.png"
+            url=f"{api_url}/{token}/{send_title}/{push_message}?icon=https://cdn.jsdelivr.net/gh/tanmx/pic@main/mihoyo/{icon}.png"
         )
         rep = await resp.json()
         log.info(t("push.result", result=rep.get("message")))
@@ -407,13 +365,16 @@ class PushHandler:
         gotify
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
+        api_url = self.get_val("gotify", "api_url", "")
+        token = self.get_val("gotify", "token", "")
+        priority = int(self.get_val("gotify", "priority", 0))
         resp = await self.http.post(
-            url=f"{self.cfg.get('gotify', 'api_url')}/message?token={self.cfg.get('gotify', 'token')}",
+            url=f"{api_url}/message?token={token}",
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={
                 "title": title,
                 "message": body,
-                "priority": self.cfg.getint("gotify", "priority"),
+                "priority": priority,
             },
         )
         rep = await resp.json()
@@ -424,8 +385,8 @@ class PushHandler:
         ifttt
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
-        ifttt_event = self.cfg.get("ifttt", "event")
-        ifttt_key = self.cfg.get("ifttt", "key")
+        ifttt_event = self.get_val("ifttt", "event", "")
+        ifttt_key = self.get_val("ifttt", "key", "")
         rep = await self.http.post(
             url=f"https://maker.ifttt.com/trigger/{ifttt_event}/with/key/{ifttt_key}",
             headers={"Content-Type": "application/json; charset=utf-8"},
@@ -433,7 +394,6 @@ class PushHandler:
         )
         text = await rep.text()
         if "errors" in text:
-            # Note: The logic for parsing errors might need adjustment if json is returned
             try:
                 log.warning(t("push.ifttt_err", error=(await rep.json())["errors"]))
             except Exception:
@@ -448,8 +408,9 @@ class PushHandler:
         WebHook
         """
         title, body, _ = self._build_push_payload(status_id, push_message)
+        webhook_url = self.get_val("webhook", "webhook_url", "")
         resp = await self.http.post(
-            url=f"{self.cfg.get('webhook', 'webhook_url')}",
+            url=webhook_url,
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={"title": title, "message": body},
         )
@@ -461,8 +422,9 @@ class PushHandler:
         qmsg
         """
         _, _, full_text = self._build_push_payload(status_id, push_message)
+        key = self.get_val("qmsg", "key", "")
         resp = await self.http.post(
-            url=f"https://qmsg.zendee.cn/send/{self.cfg.get('qmsg', 'key')}",
+            url=f"https://qmsg.zendee.cn/send/{key}",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             data={"msg": full_text},
         )
@@ -484,8 +446,9 @@ class PushHandler:
                 embed_color = 16744192
             return embed_color
 
+        webhook = self.get_val("discord", "webhook", "")
         rep = await self.http.post(
-            url=f"{self.cfg.get('discord', 'webhook')}",
+            url=webhook,
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={
                 "content": None,
@@ -520,47 +483,41 @@ class PushHandler:
         try:
             toast = __import__("win11toast").toast
             title, body, _ = self._build_push_payload(status_id, push_message)
-
-            # win11toast is often sync or creates its own loop. safe to call if it doesn't block too long.
-            # But strictly it should be run in executor if it blocks.
             toast(app_id="MihoyoBBSTools", title=title, body=body, icon="")
         except Exception:
             log.error(t("push.wintoast_err"))
 
     async def serverchan3(self, status_id: int, push_message: str | None) -> None:
         title, body, _ = self._build_push_payload(status_id, push_message)
-        sendkey = self.cfg.get("serverchan3", "sendkey")
+        sendkey = self.get_val("serverchan3", "sendkey", "")
         match = re.match(r"sctp(\d+)t", sendkey)
         if match:
             num = match.group(1)
             url = f"https://{num}.push.ft07.com/send/{sendkey}.send"
         else:
             raise ValueError(t("push.serverchan3_invalid_key"))
+        tags = self.get_val("serverchan3", "tags", "")
         data = {
             "title": title,
             "desp": body,
-            "tags": self.cfg.get("serverchan3", "tags", fallback=""),
+            "tags": tags,
         }
         rep = await self.http.post(url=url, json=data)
         log.debug(await rep.text())
 
-    # 其他推送方法，例如 ftqq, pushplus 等, 和 telegram 方法相似
-    # 在类内部直接使用 self.cfg 读取配置
-
     async def push(self, status: int, push_message: str | None) -> int:
-        if not self.load_config():
-            return 1
-        if not self.cfg.getboolean("setting", "enable"):
+        cfg = self.get_cfg()
+        if not cfg.get("enable", False):
             return 0
         if (
-            self.cfg.getboolean("setting", "error_push_only", fallback=False)
+            cfg.get("error_push_only", False)
             and status == 0
         ):
             return 0
         log.info(t("push.execution_start"))
-        func_names = self.cfg.get("setting", "push_server").lower()
+        active_channels = cfg.get("active", [])
         push_success = True
-        for func_name in func_names.split(","):
+        for func_name in active_channels:
             func = getattr(self, func_name, None)
             if not func:
                 log.warning(t("push.server_err", name=func_name))
@@ -570,7 +527,6 @@ class PushHandler:
                 if inspect.iscoroutinefunction(func):
                     await func(status, self.msg_replace(push_message))
                 else:
-                    # Fallback for sync functions like wintoast
                     func(status, self.msg_replace(push_message))
             except Exception as e:
                 log.warning(t("push.exec_fail", name=func_name, error=str(e)))
@@ -581,11 +537,9 @@ class PushHandler:
 
 
 async def async_push(
-    status: int, push_message: str | None, config_path: str | None = None
+    status: int, push_message: str | None
 ) -> int:
-    push_handler_instance = (
-        PushHandler(config_file=config_path) if config_path else PushHandler()
-    )
+    push_handler_instance = PushHandler()
     return await push_handler_instance.push(status, push_message)
 
 

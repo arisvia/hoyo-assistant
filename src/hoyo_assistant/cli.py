@@ -97,18 +97,10 @@ def _resolve_run_mode(args: Any) -> str:
 
 def build_cli_overrides(
     args: Any, run_mode: str
-) -> tuple[str | list[str] | None, dict[str, Any], str | None]:
+) -> tuple[str | list[str] | None, dict[str, Any]]:
     """Build runtime config overrides from CLI arguments without mutating process env."""
     overrides: dict[str, Any] = {}
     config_target: str | list[str] | None = None
-    raw_push_config = getattr(args, "push_config", None)
-    push_config_path: str | None = None
-
-    # Normalize push_config_path to absolute path to avoid relative path resolution bugs
-    if raw_push_config:
-        push_config_path = str(
-            os.path.abspath(os.path.expanduser(str(raw_push_config)))
-        )
 
     # Global --config can be one or more paths.
     config_val = getattr(args, "configs", None)
@@ -123,10 +115,7 @@ def build_cli_overrides(
         else:
             config_target = str(config_val)
 
-    normalized_push_config: str | None = (
-        str(push_config_path) if push_config_path is not None else None
-    )
-    return config_target, overrides, normalized_push_config
+    return config_target, overrides
 
 
 def _bootstrap_config_target(config_target: str | list[str] | None) -> str | None:
@@ -136,14 +125,12 @@ def _bootstrap_config_target(config_target: str | list[str] | None) -> str | Non
     return config_target
 
 
-async def run_single(push_config_path: str | None = None) -> None:
+async def run_single() -> None:
     """Execute single account task."""
 
     cli_print(t("cli.task.single_start"), style="green")
     try:
-        run_code, run_msg = await single_account.run_single_account(
-            push_config_path=push_config_path
-        )
+        run_code, run_msg = await single_account.run_single_account()
         if run_msg:
             cli_panel(
                 run_msg,
@@ -157,14 +144,13 @@ async def run_single(push_config_path: str | None = None) -> None:
 
 async def run_multi_async(
     target_path: str | list[str] | None = None,
-    push_config_path: str | None = None,
     use_env: bool = True,
 ) -> None:
     """Execute multi-account task async."""
 
     cli_print(t("cli.task.multi_start"), style="green")
     task_status, task_push_message = await multi_account.run_multi_account(
-        target_path, push_config_path=push_config_path, use_env=use_env
+        target_path, use_env=use_env
     )
 
     cli_panel(
@@ -174,7 +160,7 @@ async def run_multi_async(
     )
 
 
-def run_multi_manager(args: Any, push_config_path: str | None = None) -> None:
+def run_multi_manager(args: Any) -> None:
     """Execution logic for multi account command"""
 
     target_path: str | list[str] | None = None
@@ -194,7 +180,7 @@ def run_multi_manager(args: Any, push_config_path: str | None = None) -> None:
         target_path = None
 
     asyncio.run(
-        run_multi_async(target_path, push_config_path=push_config_path, use_env=use_env)
+        run_multi_async(target_path, use_env=use_env)
     )
 
 
@@ -291,7 +277,6 @@ def main() -> None:
     parser.add_argument(
         "-c", "--config", dest="configs", nargs="+", help=t("cli.parser.config")
     )
-    parser.add_argument("-p", "--push-config", help=t("cli.parser.push_config"))
     parser.add_argument(
         "-m", "--multi", action="store_true", help=t("cli.parser.multi")
     )
@@ -337,11 +322,10 @@ def main() -> None:
         # Provide explicit type annotations so mypy does not complain about implicitly Optional variables
         config_target: str | list[str] | None
         cli_overrides: dict[str, Any]
-        push_config_path: str | None
-        config_target, cli_overrides, push_config_path = None, {}, None
+        config_target, cli_overrides = None, {}
     else:
         run_mode = _resolve_run_mode(args)
-        config_target, cli_overrides, push_config_path = build_cli_overrides(
+        config_target, cli_overrides = build_cli_overrides(
             args, run_mode
         )
 
@@ -381,11 +365,11 @@ def main() -> None:
             cli_print(t("cli.task.server_fail", error=e), style="red")
     else:
         if run_mode == "multi":
-            run_multi_manager(args, push_config_path=push_config_path)
+            run_multi_manager(args)
         else:
             if len(sys.argv) == 1:
                 cli_print(t("cli.help.no_args"), style="yellow")
-            asyncio.run(run_single(push_config_path=push_config_path))
+            asyncio.run(run_single())
 
 
 if __name__ == "__main__":

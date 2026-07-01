@@ -8,6 +8,7 @@ from ..core import (
     StatusCode,
     StokenError,
     config,
+    http,
     log,
     login,
     push,
@@ -191,26 +192,25 @@ def _is_push_enabled() -> bool:
     env_enable = str(os.getenv("HOYO_ASSISTANT_PUSH__ENABLE", "")).strip().lower()
     if env_enable in {"true", "1", "on", "yes"}:
         return True
-    push_flag = str(config.get("push", "")).strip().lower()
-    return push_flag in {"true", "1", "on", "yes"}
+    push_cfg = config.get("push")
+    if isinstance(push_cfg, dict):
+        return bool(push_cfg.get("enable"))
+    return False
 
 
 async def run_single_account(
     config_path: str | None = None,
-    push_config_path: str | None = None,
     use_env: bool = True,
 ) -> tuple[int, str]:
     # Keep compatibility with test/mocked callables that only accept positional config_path.
-    if use_env:
-        run_code, run_msg = await run_once(config_path)
-    else:
-        run_code, run_msg = await run_once(config_path, use_env=use_env)
-    if not _is_push_enabled():
-        return run_code, run_msg
+    async with http:
+        if use_env:
+            run_code, run_msg = await run_once(config_path)
+        else:
+            run_code, run_msg = await run_once(config_path, use_env=use_env)
+        if not _is_push_enabled():
+            return run_code, run_msg
 
-    if push_config_path:
-        await push.push(run_code, run_msg, config_path=push_config_path)
-    else:
         await push.push(run_code, run_msg)
 
-    return run_code, run_msg
+        return run_code, run_msg

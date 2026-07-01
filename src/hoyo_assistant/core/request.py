@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import suppress
-from typing import Any, cast
+from typing import Any
 
 import aiohttp
 import orjson
@@ -120,7 +120,7 @@ class HttpClient:
         timeout = aiohttp.ClientTimeout(total=ASYNC_TIMEOUT)
 
         def json_serializer(x: Any) -> str:
-            return cast(str, orjson.dumps(x).decode())
+            return orjson.dumps(x).decode()
 
         self.session = aiohttp.ClientSession(
             connector=connector,
