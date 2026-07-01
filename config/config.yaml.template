@@ -57,7 +57,5 @@ cloud_games:
     enable: false
   os:
     enable: false
-competition:
-  enable: false
 web_activity:
   enable: false

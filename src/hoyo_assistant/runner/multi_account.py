@@ -80,7 +80,7 @@ async def run_multi_account(
         )
         if os.path.exists(search_path):
             for f in os.listdir(search_path):
-                if f.endswith((".yaml", ".yml")):
+                if f.endswith((".yaml", ".yml")) and not f.endswith("template.yaml"):
                     config_pool.append((search_path, f))
 
     if not config_pool:
