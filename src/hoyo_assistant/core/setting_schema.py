@@ -149,13 +149,13 @@ class WebActivityConfig(BaseConfigModel):
 class HoyoSettings(BaseSettings):
     enable: bool = True
     version: int = 15
-    push: CoercedPush = Field(default_factory=PushConfig)
     account: AccountConfig = Field(default_factory=lambda: AccountConfig())
     device: DeviceConfig = Field(default_factory=DeviceConfig)
     mihoyobbs: MihoyoBBSConfig = Field(default_factory=MihoyoBBSConfig)
     games: GamesConfig = Field(default_factory=GamesConfig)
     cloud_games: CloudGamesConfig = Field(default_factory=CloudGamesConfig)
     web_activity: WebActivityConfig = Field(default_factory=WebActivityConfig)
+    push: CoercedPush = Field(default_factory=PushConfig)
 
     model_config = SettingsConfigDict(
         env_prefix="HOYO_ASSISTANT_",
