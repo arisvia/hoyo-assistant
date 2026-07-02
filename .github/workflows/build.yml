@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: 🔧 Setup uv
-        uses: astral-sh/setup-uv@fac544c
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
 
       - name: 💾 Install Build Tools
         run: |
