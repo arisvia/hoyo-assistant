@@ -24,11 +24,13 @@ jobs:
 
       - name: 🔧 Setup uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          activate-environment: true
 
       - name: 💾 Install Build Tools
         run: |
           uv pip install build pyinstaller
-          uv pip install -e .
+          uv pip install -e "."
 
       - name: 🔨 Build Wheel and Sdist
         run: python -m build

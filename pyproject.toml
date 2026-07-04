@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     { name = "arisvia", email = "160387885+arisvia@users.noreply.github.com" },
 ]
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "aiofiles",
