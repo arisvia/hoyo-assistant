@@ -41,7 +41,7 @@ def setup_logger(log_level: str = "INFO") -> None:
     normalized_level = str(log_level or "INFO").upper()
     if normalized_level not in VALID_LOG_LEVELS:
         sys.stderr.write(
-            f"Invalid HOYO_ASSISTANT_SYSTEM__LOG_LEVEL={normalized_level}, fallback to INFO\n"
+            f"Invalid HOYO_ASSISTANT_LOG_LEVEL={normalized_level}, fallback to INFO\n"
         )
         normalized_level = "INFO"
 
@@ -117,7 +117,7 @@ def setup_logger(log_level: str = "INFO") -> None:
             logging_logger.setLevel(logging.WARNING)
 
 
-_env_log_level = os.environ.get("HOYO_ASSISTANT_SYSTEM__LOG_LEVEL", "INFO").upper()
+_env_log_level = os.environ.get("HOYO_ASSISTANT_LOG_LEVEL", "INFO").upper()
 setup_logger(_env_log_level)
 
 log = logger

@@ -27,7 +27,7 @@ These variables control system behavior outside the main configuration schema:
     - `HOYO_ASSISTANT_LOG_RETENTION` (default: `1 week`): Log retention period.
     - `HOYO_ASSISTANT_LOG_CONSOLE_ENABLE` (default: `true`): Toggle console logging.
     - `HOYO_ASSISTANT_LOG_FILE_ENABLE` (default: `true`): Toggle file logging.
-    - `HOYO_ASSISTANT_SYSTEM__LOG_LEVEL` (default: `INFO`): Global log level.
+    - `HOYO_ASSISTANT_LOG_LEVEL` (default: `INFO`): Global log level.
 
 - **Interface**:
     - `HOYO_ASSISTANT_CLI_OUTPUT`: Output mode (`rich`, `plain`, `auto`).

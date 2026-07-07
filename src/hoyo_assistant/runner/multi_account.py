@@ -4,14 +4,11 @@ import random
 from collections.abc import Iterable
 
 from ..core import (
-    CookieError,
-    StatusCode,
-    StokenError,
     config,
     http,
+    is_push_enabled,
     log,
     push,
-    setting,
     t,
 )
 from .single_account import run_once
@@ -45,16 +42,6 @@ def _collect_config_pool(paths: Iterable[str]) -> list[tuple[str, str]]:
         else:
             log.warning(t("multi.path_not_exists", path=single_path))
     return pool
-
-
-def _is_push_enabled() -> bool:
-    env_enable = str(os.getenv("HOYO_ASSISTANT_PUSH__ENABLE", "")).strip().lower()
-    if env_enable in {"true", "1", "on", "yes"}:
-        return True
-    push_cfg = config.get("push")
-    if isinstance(push_cfg, dict):
-        return bool(push_cfg.get("enable"))
-    return False
 
 
 async def run_multi_account(
@@ -106,7 +93,7 @@ async def run_multi_account(
                     if isinstance(e, CookieError)
                     else t("multi.stoken_error")
                 )
-                if _is_push_enabled():
+                if is_push_enabled():
                     await push.push(StatusCode.FAILURE.value, error_msg)
             else:
                 if run_code == StatusCode.SUCCESS.value:

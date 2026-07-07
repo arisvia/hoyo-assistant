@@ -9,6 +9,7 @@ from ..core import (
     StokenError,
     config,
     http,
+    is_push_enabled,
     log,
     login,
     push,
@@ -216,16 +217,6 @@ async def run_once(
     return status_code, result_msg
 
 
-def _is_push_enabled() -> bool:
-    env_enable = str(os.getenv("HOYO_ASSISTANT_PUSH__ENABLE", "")).strip().lower()
-    if env_enable in {"true", "1", "on", "yes"}:
-        return True
-    push_cfg = config.get("push")
-    if isinstance(push_cfg, dict):
-        return bool(push_cfg.get("enable"))
-    return False
-
-
 async def run_single_account(
     config_path: str | None = None,
     use_env: bool = True,
@@ -236,7 +227,7 @@ async def run_single_account(
             run_code, run_msg = await run_once(config_path)
         else:
             run_code, run_msg = await run_once(config_path, use_env=use_env)
-        if not _is_push_enabled():
+        if not is_push_enabled():
             return run_code, run_msg
 
         await push.push(run_code, run_msg)

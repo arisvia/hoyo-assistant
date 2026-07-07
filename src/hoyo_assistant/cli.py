@@ -364,7 +364,7 @@ def main() -> None:
     else:
         # Apply log-level, log-dir, no-log from CLI args
         log_level = getattr(args, "log_level", None) or os.environ.get(
-            "HOYO_ASSISTANT_SYSTEM__LOG_LEVEL", "INFO"
+            "HOYO_ASSISTANT_LOG_LEVEL", "INFO"
         )
         log_dir = getattr(args, "log_dir", None)
         if log_dir:
