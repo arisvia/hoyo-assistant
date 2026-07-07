@@ -56,7 +56,7 @@ async def handle_login() -> None:
             account_cfg["mid"] == "",
         )
     ):
-        if config["mihoyobbs"]["enable"]:
+        if config["mihoyobbs"]["checkin"]:
             await login.login()
             await asyncio.sleep(random.randint(3, 8))
         account_cfg["cookie"] = tools.tidy_cookie(account_cfg["cookie"])
@@ -71,7 +71,7 @@ async def run_miyoushe_tasks() -> tuple[str, bool]:
     return_data = ""
     raise_stoken = False
 
-    if not config["mihoyobbs"]["enable"]:
+    if not config["mihoyobbs"]["checkin"]:
         return return_data, raise_stoken
 
     if config["account"]["stoken"] == "StokenError":

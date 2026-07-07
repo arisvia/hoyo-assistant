@@ -39,7 +39,7 @@ async def run_task() -> str:
     ret_msg = ""
     for game in CLOUD_GAMES:
         token = conf.get(game.name, {}).get("token")
-        if conf.get(game.name, {}).get("enable") and token != "":
+        if token:
             lang = conf.get("lang", "zh-cn")
             headers = _build_headers(token, game.biz, lang)
             game_task = BaseCloudGame(

@@ -95,7 +95,7 @@ _UA_TEMPLATE = (
 )
 
 # Headers Template
-DEFAULT_HEADERS: dict[str, str] = {
+DEFAULT_HEADERS: Final[dict[str, str]] = {
     "Accept": "application/json, text/plain, */*",
     "DS": "",
     "x-rpc-channel": "miyousheluodi",

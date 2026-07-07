@@ -3,7 +3,7 @@
 ## Purpose and Entry
 
 - This repo automates HoYoLAB/MiYoUShe daily tasks plus optional push notifications.
-- Main entrypoint is `hoyo-cli` -> `src/hoyo_assistant/cli.py:main` (`pyproject.toml`).
+- Main entrypoint is `hoyo-cli` or `hoyo-assistant` -> `src/hoyo_assistant/cli.py:main` (defined in `pyproject.toml`).
 - Direct run mode defaults to single account; add `--multi` for multi-account.
 
 ## Build and CI/CD
@@ -14,9 +14,10 @@
     - Compiles standalone executable using PyInstaller (`dist/hoyo-assistant`).
 - **Test & Run**: Use `.github/workflows/test_run.yml` for execution.
     - Triggers on push/schedule/dispatch.
-    - Uses `scripts/smoke_test.py` for integration validation.
+    - Runs `pytest` for unit tests.
+    - Runs `tests/test_smoke.py` for integration validation.
 
-## Runtime Envorinment Variables (Non-Pydantic)
+## Runtime Environment Variables (Non-Pydantic)
 
 These variables control system behavior outside the main configuration schema:
 
@@ -39,16 +40,10 @@ These variables control system behavior outside the main configuration schema:
 ## Architecture Quick Map
 
 - `src/hoyo_assistant/cli.py`: arg parsing, run-mode resolution, config bootstrap/reload, runner dispatch.
-- `src/hoyo_assistant/core/config.py` + `core/config_schema.py`: file/env merge, runtime overrides, schema validation.
+- `src/hoyo_assistant/core/setting.py` + `core/setting_schema.py`: file/env merge, runtime overrides, schema validation.
 - `src/hoyo_assistant/runner/single_account.py`: one-account orchestration + optional push.
 - `src/hoyo_assistant/runner/multi_account.py`: config target discovery, per-account loop, summary aggregation.
-- `src/hoyo_assistant/core/request.py`: shared async HTTP client (retry + GET cache).
+- `src/hoyo_assistant/core/request.py`: shared async HTTP client (retry + GET cache). Exports a global `http` client instance used across modules; supports TTL caching (GET), MockResponse for cache hits, and tenacity-based retries.
 - `src/hoyo_assistant/core/push.py`: `PushHandler` provider dispatch.
 - `src/hoyo_assistant/tasks/**`: feature modules exposing `run_task()`.
-
-- `src/hoyo_assistant/core/request.py`: shared async HTTP client (retry + GET cache). Exports a global
-  `http` client instance used across modules; supports TTL caching (GET), MockResponse for cache hits,
-  and tenacity-based retries.
-- `src/hoyo_assistant/server.py`: interactive scheduler / server console (implements `ServerConfig`,
-  `start_interactive_console`, `scheduler_loop` and `execute_task`). Used by the `server` CLI subcommand
-  to run scheduled multi/single account runs with an interactive prompt.
+- `src/hoyo_assistant/server.py`: interactive scheduler / server console (implements `ServerConfig`, `start_interactive_console`, `scheduler_loop` and `execute_task`). Used by the `server` CLI subcommand to run scheduled multi/single account runs with an interactive prompt.

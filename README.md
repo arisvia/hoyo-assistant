@@ -13,15 +13,26 @@ HoYoLAB/MiYoUShe 每日任务自动化助手。
 
 ## 安装
 
+### 使用 uv（推荐）
+
 ```bash
-pip install hoyo-assistant
+# 从 PyPI 安装（发布后）
+uv pip install hoyo-assistant
+
+# 或从源码安装
+git clone https://github.com/arisvia/hoyo-assistant.git
+cd hoyo-assistant
+uv pip install -e .
 ```
 
-或从源码安装：
+### 使用 pip
 
 ```bash
-git clone https://github.com/arisvia/hoyolab.git
-cd hoyolab
+pip install hoyo-assistant
+
+# 或从源码安装
+git clone https://github.com/arisvia/hoyo-assistant.git
+cd hoyo-assistant
 pip install -e .
 ```
 

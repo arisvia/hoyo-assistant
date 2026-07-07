@@ -5,13 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hoyo-assistant"
 version = "1.0.0"
-description = "Your personal HoYoLAB daily task automation assistant"
+description = "Your personal HoYoLAB/MiYoUShe daily task automation assistant"
 readme = "README.md"
+license = "MIT"
+keywords = ["hoyolab", "miyoushe", "genshin", "honkai", "star-rail", "zzz", "automation"]
 authors = [
     { name = "arisvia", email = "160387885+arisvia@users.noreply.github.com" },
 ]
-license = "MIT"
 requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+]
 dependencies = [
     "aiofiles",
     "aiodns",
@@ -41,7 +51,22 @@ dev = [
 ]
 
 [project.scripts]
+hoyo-cli = "hoyo_assistant.cli:main"
 hoyo-assistant = "hoyo_assistant.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/arisvia/hoyo-assistant"
+Repository = "https://github.com/arisvia/hoyo-assistant"
+Issues = "https://github.com/arisvia/hoyo-assistant/issues"
+
+[tool.setuptools]
+packages = ["hoyo_assistant", "hoyo_assistant.core", "hoyo_assistant.runner", "hoyo_assistant.tasks", "hoyo_assistant.tasks.base", "hoyo_assistant.tasks.chinese", "hoyo_assistant.tasks.community", "hoyo_assistant.tasks.overseas", "hoyo_assistant.tasks.web"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.package-data]
+hoyo_assistant = ["locales/*.json", "py.typed"]
 
 [tool.mypy]
 python_version = "3.12"

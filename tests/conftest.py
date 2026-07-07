@@ -1,107 +1,73 @@
-import sys
-import types
+"""Test configuration and fixtures."""
 
-# Provide a minimal stub for aiohttp to avoid importing the real package during tests
-# which may pull in heavy dependencies (yarl/pydantic) and cause environment issues.
-aiohttp_stub = types.ModuleType("aiohttp")
+import pytest
 
 
-class ClientError(Exception):
-    pass
-
-
-class AsyncResolver:
-    def __init__(self, *args, **kwargs):
-        pass
-
-
-class TCPConnector:
-    def __init__(self, *args, **kwargs):
-        pass
-
-
-class ClientTimeout:
-    def __init__(self, *args, **kwargs):
-        pass
-
-
-class ClientSession:
-    def __init__(self, *args, **kwargs):
-        # emulate closed attribute used by HttpClient
-        self.closed = True
-        self.cookie_jar = types.SimpleNamespace()
-
-    async def close(self):
-        self.closed = True
-
-    async def request(self, *args, **kwargs):
-        # simple async context compatible stub
-        class _Resp:
-            status = 200
-            headers = {}
-
-            async def read(self):
-                return b""
-
-            async def json(self):
-                return {}
-
-            def release(self):
-                pass
-
-        return _Resp()
-
-
-# attach to module
-aiohttp_stub.ClientError = ClientError
-aiohttp_stub.AsyncResolver = AsyncResolver
-aiohttp_stub.TCPConnector = TCPConnector
-aiohttp_stub.ClientTimeout = ClientTimeout
-aiohttp_stub.ClientSession = ClientSession
-
-# insert into sys.modules early so imports in package pick up this stub
-sys.modules.setdefault("aiohttp", aiohttp_stub)
-
-# Minimal stub for pydantic to avoid pydantic-core runtime mismatch in test env
-pydantic_stub = types.ModuleType("pydantic")
-
-
-class _BaseModel:
-    pass
-
-
-def _BeforeValidator(fn):
-    return fn
-
-
-def _Field(*args, **kwargs):
-    # Return a sentinel object; actual value isn't needed for import-time
-    return kwargs.get("default")
-
-
-pydantic_stub.BaseModel = _BaseModel
-pydantic_stub.BeforeValidator = _BeforeValidator
-pydantic_stub.Field = _Field
-
-sys.modules.setdefault("pydantic", pydantic_stub)
-
-# Minimal stub for pydantic_settings
-pydantic_settings_stub = types.ModuleType("pydantic_settings")
-
-
-class _BaseSettings:
-    def __init__(self, *args, **kwargs):
-        # accept arbitrary init args, do nothing
-        super().__init__()
-
-    def model_dump(self) -> dict:
-        # provide minimal dump expected by code under test
-        return {}
-
-
-# used in annotations only; provide simple placeholders
-pydantic_settings_stub.BaseSettings = _BaseSettings
-pydantic_settings_stub.PydanticBaseSettingsSource = object
-pydantic_settings_stub.SettingsConfigDict = dict
-
-sys.modules.setdefault("pydantic_settings", pydantic_settings_stub)
+@pytest.fixture
+def mock_config():
+    """Provide a minimal config dict for testing."""
+    return {
+        "account": {
+            "cookie": "",
+            "stoken": "",
+            "stuid": "",
+            "mid": "",
+        },
+        "device": {
+            "name": "TestDevice",
+            "model": "TestModel",
+            "id": "test-device-id",
+            "fp": "",
+        },
+        "mihoyobbs": {
+            "checkin": False,
+            "checkin_list": [],
+        },
+        "games": {
+            "cn": {
+                "genshin": {"checkin": False, "black_list": []},
+                "honkai2": {"checkin": False, "black_list": []},
+                "honkai3rd": {"checkin": False, "black_list": []},
+                "tears_of_themis": {"checkin": False, "black_list": []},
+                "honkai_sr": {"checkin": False, "black_list": []},
+                "zzz": {"checkin": False, "black_list": []},
+                "useragent": "TestUA",
+                "retries": 1,
+            },
+            "os": {
+                "cookie": "",
+                "lang": "en-us",
+                "genshin": {"checkin": False, "black_list": []},
+                "honkai2": {"checkin": False, "black_list": []},
+                "honkai3rd": {"checkin": False, "black_list": []},
+                "tears_of_themis": {"checkin": False, "black_list": []},
+                "honkai_sr": {"checkin": False, "black_list": []},
+                "zzz": {"checkin": False, "black_list": []},
+            },
+        },
+        "cloud_games": {
+            "cn": {
+                "genshin": {"enable": False, "token": ""},
+                "honkai2": {"enable": False, "token": ""},
+                "honkai3rd": {"enable": False, "token": ""},
+                "tears_of_themis": {"enable": False, "token": ""},
+                "honkai_sr": {"enable": False, "token": ""},
+                "zzz": {"enable": False, "token": ""},
+            },
+            "os": {
+                "genshin": {"enable": False, "token": ""},
+                "honkai2": {"enable": False, "token": ""},
+                "honkai3rd": {"enable": False, "token": ""},
+                "tears_of_themis": {"enable": False, "token": ""},
+                "honkai_sr": {"enable": False, "token": ""},
+                "zzz": {"enable": False, "token": ""},
+            },
+        },
+        "push": {
+            "enable": False,
+            "telegram": {
+                "token": "",
+                "chat_id": "",
+            },
+        },
+    }
