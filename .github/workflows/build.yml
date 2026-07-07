@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: 🔧 Setup uv
-        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+        uses: astral-sh/setup-uv@v6
         with:
           activate-environment: true
 

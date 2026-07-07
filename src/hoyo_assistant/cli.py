@@ -283,6 +283,21 @@ def main() -> None:
     parser.add_argument(
         "-d", "--debug", action="store_true", help=t("cli.parser.debug")
     )
+    # 日志控制参数
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help=t("cli.parser.log_level"),
+    )
+    parser.add_argument(
+        "--log-dir",
+        help=t("cli.parser.log_dir"),
+    )
+    parser.add_argument(
+        "--no-log",
+        action="store_true",
+        help=t("cli.parser.no_log"),
+    )
 
     subparsers = parser.add_subparsers(dest="command", help=t("cli.parser.commands"))
 
@@ -346,6 +361,22 @@ def main() -> None:
 
     if args.debug:
         loghelper.setup_logger("DEBUG")
+    else:
+        # Apply log-level, log-dir, no-log from CLI args
+        log_level = getattr(args, "log_level", None) or os.environ.get(
+            "HOYO_ASSISTANT_SYSTEM__LOG_LEVEL", "INFO"
+        )
+        log_dir = getattr(args, "log_dir", None)
+        if log_dir:
+            from pathlib import Path
+            log_dir = Path(log_dir)
+        no_log = getattr(args, "no_log", False)
+        loghelper.setup_logger(
+            log_level=log_level,
+            log_dir=log_dir,
+            console_enable=not no_log,
+            file_enable=not no_log,
+        )
 
     if args.command == "check":
         validate_config(args.config, getattr(args, "effective", False))
