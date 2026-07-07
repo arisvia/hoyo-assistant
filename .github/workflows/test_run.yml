@@ -33,7 +33,7 @@ jobs:
         env:
           HOYO_ASSISTANT_LANGUAGE: zh_CN
         run: |
-          mkdir config
+          mkdir -p config
           curl ${{ secrets.CONFIG_1 }} -o config/config_1.yaml
           curl ${{ secrets.CONFIG_2 }} -o config/config_2.yaml
           python tests/test_tasks.py --multi
