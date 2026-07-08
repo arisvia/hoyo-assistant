@@ -37,7 +37,12 @@ class InterceptHandler(logging.Handler):
         )
 
 
-def setup_logger(log_level: str = "INFO") -> None:
+def setup_logger(
+    log_level: str = "INFO",
+    log_dir: str | None = None,
+    console_enable: bool | None = None,
+    file_enable: bool | None = None,
+) -> None:
     normalized_level = str(log_level or "INFO").upper()
     if normalized_level not in VALID_LOG_LEVELS:
         sys.stderr.write(
@@ -49,21 +54,24 @@ def setup_logger(log_level: str = "INFO") -> None:
     logger.remove()
 
     # Determine Log Directory
-    # Default to CWD/logs, not src/hoyo_assistant/logs
+    # Priority: explicit arg > env var > CWD/logs
     default_log_dir = os.path.join(os.getcwd(), "logs")
-    log_dir = os.environ.get("HOYO_ASSISTANT_LOG_DIR", default_log_dir)
+    if log_dir is None:
+        log_dir = os.environ.get("HOYO_ASSISTANT_LOG_DIR", default_log_dir)
 
     # Log Retention and Rotation Configs
     rotation = os.environ.get("HOYO_ASSISTANT_LOG_ROTATION", "10 MB")
     retention = os.environ.get("HOYO_ASSISTANT_LOG_RETENTION", "1 week")
 
-    # Environment flags to control outputs
-    console_enable = (
-        os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower() == "true"
-    )
-    file_enable = (
-        os.environ.get("HOYO_ASSISTANT_LOG_FILE_ENABLE", "true").lower() == "true"
-    )
+    # Environment flags to control outputs (explicit args take priority)
+    if console_enable is None:
+        console_enable = (
+            os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower() == "true"
+        )
+    if file_enable is None:
+        file_enable = (
+            os.environ.get("HOYO_ASSISTANT_LOG_FILE_ENABLE", "true").lower() == "true"
+        )
 
     # Add console handler with improved format
     # Business Logic logs (INFO+) shown to user. Runtime logs (DEBUG) hidden unless requested.
