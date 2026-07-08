@@ -34,6 +34,7 @@ dependencies = [
     "tenacity",
     "pydantic-settings",
     "orjson",
+    "mypy==2.2.0",
 ]
 
 [project.optional-dependencies]
