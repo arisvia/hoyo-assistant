@@ -260,10 +260,11 @@ class TestValidateConfigFile:
 class TestSaveConfigSync:
     def test_save_to_explicit_path(self, clean_setting, tmp_path):
         out = tmp_path / "out.yaml"
-        clean_setting.save_config_sync(str(out), {"enable": True})
+        # Use non-default values so exclude_defaults=True keeps them
+        clean_setting.save_config_sync(str(out), {"enable": False, "version": 99})
         assert out.exists()
         loaded = yaml.safe_load(out.read_text(encoding="utf-8"))
-        assert loaded == {"enable": True}
+        assert loaded == {"enable": False, "version": 99}
 
     def test_save_defaults_to_config_path(self, clean_setting, tmp_path):
         out = tmp_path / "cfg.yaml"

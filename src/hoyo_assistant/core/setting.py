@@ -162,10 +162,24 @@ async def save_config() -> None:
         log.error(t("config.save_fail", error=e))
 
 
+def _strip_none_push_values(data: dict[str, Any]) -> dict[str, Any]:
+    """Remove None-valued push channels from config dict to keep YAML clean."""
+    result = deepcopy(data)
+    if isinstance(result.get("push"), dict):
+        result["push"] = {
+            k: v for k, v in result["push"].items() if v is not None
+        }
+    return result
+
+
 def save_config_sync(
     filepath: str | None = None, data: dict[str, Any] | None = None
 ) -> None:
-    """Save config to file (synchronous)."""
+    """Save config to file (synchronous).
+
+    Uses exclude_defaults=True to keep the YAML clean — only writes fields
+    that differ from schema defaults, matching the behavior of format/auto_fill.
+    """
     target = filepath or config_path
     content = data or config
 
@@ -174,9 +188,15 @@ def save_config_sync(
         return
 
     try:
+        # Re-validate through Pydantic to get a proper model, then dump
+        # with exclude_defaults to keep output minimal (same as format command).
+        settings = HoyoSettings.model_validate(content)
+        save_data = settings.model_dump(exclude_defaults=True)
+        save_data = _strip_none_push_values(save_data)
+
         with open(target, "w", encoding="utf-8") as f:
             yaml.dump(
-                content,
+                save_data,
                 f,
                 default_flow_style=False,
                 allow_unicode=True,
@@ -280,9 +300,10 @@ def auto_fill_config_file(filepath: str, backup: bool = True) -> tuple[bool, str
             log.info(t("config.backup_created", path=backup_path))
 
         # Write filled config back to file
+        clean_data = _strip_none_push_values(filled_data)
         with open(filepath, "w", encoding="utf-8") as f:
             yaml.dump(
-                filled_data,
+                clean_data,
                 f,
                 default_flow_style=False,
                 allow_unicode=True,

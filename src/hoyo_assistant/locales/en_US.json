@@ -54,7 +54,7 @@
       "success_msg": "Task completed successfully: {msg}",
       "single_start": "Starting single account task...",
       "single_fail": "Task failed: {error}",
-      "multi_start": "Starting multi-account task (without individual push)...",
+      "multi_start": "Starting multi-account task...",
       "exec_report": "Execution report",
       "config_error": "Configuration error: {error}",
       "temp_config": "Detected {count} cookies. Generating temp configs in {path}...",

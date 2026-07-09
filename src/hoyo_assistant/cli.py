@@ -227,12 +227,13 @@ def generate_template(output_path: str | None) -> None:
 
     # Save the default config
     try:
+        clean_config = setting._strip_none_push_values(setting.DEFAULT_CONFIG)
         if output_path:
-            setting.save_config_sync(output_path, setting.DEFAULT_CONFIG)
+            setting.save_config_sync(output_path, clean_config)
             cli_print(t("cli.task.template_saved", path=output_path), style="green")
         else:
             rendered = yaml.dump(
-                setting.DEFAULT_CONFIG,
+                clean_config,
                 default_flow_style=False,
                 allow_unicode=True,
                 sort_keys=False,

@@ -54,7 +54,7 @@
       "success_msg": "任务成功完成：{msg}",
       "single_start": "开始单账号任务...",
       "single_fail": "任务失败：{error}",
-      "multi_start": "开始多账号任务（无单独推送模式）...",
+      "multi_start": "开始多账号任务...",
       "exec_report": "执行报告",
       "config_error": "配置错误：{error}",
       "temp_config": "检测到 {count} 个 Cookie，正在 {path} 生成临时配置文件...",

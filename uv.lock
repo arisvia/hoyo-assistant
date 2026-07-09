@@ -622,7 +622,7 @@ requires-dist = [
     { name = "aiohttp", extras = ["speedups"] },
     { name = "cachetools" },
     { name = "loguru" },
-    { name = "mypy", specifier = "==2.2.0" },
+    { name = "mypy" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "orjson" },
     { name = "pre-commit", marker = "extra == 'dev'" },
