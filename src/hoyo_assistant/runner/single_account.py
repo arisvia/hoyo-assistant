@@ -104,10 +104,10 @@ async def run_cn_signin_tasks() -> str:
     if cn_signin_enabled:
         result.append(await chinese.run_signin_task())
 
-    # Check if any CN cloud game has enable=True
+    # Check if any CN cloud game has token configured
     cn_cloud_config = config.get("cloud_games", {}).get("cn", {})
     cn_cloud_enabled = any(
-        isinstance(val, dict) and val.get("enable")
+        isinstance(val, dict) and val.get("token")
         for key, val in cn_cloud_config.items()
     )
     if cn_cloud_enabled:
@@ -130,10 +130,10 @@ async def run_os_signin_tasks() -> str:
         if os_result:
             result.append(f"{t('games.os.title')}{os_result}")
 
-    # Check if any OS cloud game has enable=True
+    # Check if any OS cloud game has token configured
     os_cloud_config = config.get("cloud_games", {}).get("os", {})
     os_cloud_enabled = any(
-        isinstance(val, dict) and val.get("enable")
+        isinstance(val, dict) and val.get("token")
         for key, val in os_cloud_config.items()
         if key != "lang"
     )

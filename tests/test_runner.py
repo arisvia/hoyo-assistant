@@ -276,7 +276,7 @@ class TestRunCnSigninTasks:
 
     @pytest.mark.asyncio
     async def test_cloud_enabled_runs_cloud(self, cfg):
-        config["cloud_games"]["cn"]["genshin"]["enable"] = True
+        config["cloud_games"]["cn"]["genshin"]["token"] = "some_token"
         with patch.object(single_account, "chinese") as chinese_mod:
             chinese_mod.run_signin_task = AsyncMock()
             chinese_mod.run_cloud_task = AsyncMock(return_value="cloud ok")
@@ -287,7 +287,7 @@ class TestRunCnSigninTasks:
     @pytest.mark.asyncio
     async def test_both_enabled_both_run(self, cfg):
         config["games"]["cn"]["genshin"]["checkin"] = True
-        config["cloud_games"]["cn"]["zzz"]["enable"] = True
+        config["cloud_games"]["cn"]["zzz"]["token"] = "some_token"
         with patch.object(single_account, "chinese") as chinese_mod:
             chinese_mod.run_signin_task = AsyncMock(return_value="signin")
             chinese_mod.run_cloud_task = AsyncMock(return_value="cloud")
@@ -324,7 +324,7 @@ class TestRunOsSigninTasks:
 
     @pytest.mark.asyncio
     async def test_cloud_enabled_runs_cloud(self, cfg):
-        config["cloud_games"]["os"]["genshin"]["enable"] = True
+        config["cloud_games"]["os"]["genshin"]["token"] = "some_token"
         with patch.object(single_account, "overseas") as overseas_mod:
             overseas_mod.run_signin_task = AsyncMock()
             overseas_mod.run_cloud_task = AsyncMock(return_value="os cloud")
