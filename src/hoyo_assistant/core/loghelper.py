@@ -66,7 +66,8 @@ def setup_logger(
     # Environment flags to control outputs (explicit args take priority)
     if console_enable is None:
         console_enable = (
-            os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower() == "true"
+            os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower()
+            == "true"
         )
     if file_enable is None:
         file_enable = (

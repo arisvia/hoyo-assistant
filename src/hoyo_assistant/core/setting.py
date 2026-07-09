@@ -166,9 +166,7 @@ def _strip_none_push_values(data: dict[str, Any]) -> dict[str, Any]:
     """Remove None-valued push channels from config dict to keep YAML clean."""
     result = deepcopy(data)
     if isinstance(result.get("push"), dict):
-        result["push"] = {
-            k: v for k, v in result["push"].items() if v is not None
-        }
+        result["push"] = {k: v for k, v in result["push"].items() if v is not None}
     return result
 
 

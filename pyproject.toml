@@ -92,6 +92,9 @@ line-length = 88
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["SIM117"]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 force-single-line = false

@@ -2,13 +2,11 @@
 
 import os
 from copy import deepcopy
-from unittest.mock import patch
 
 import pytest
 import yaml
 
 from hoyo_assistant.core import setting
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -116,9 +114,13 @@ class TestReloadConfig:
         clean_setting.reload_config(
             config_file=config_file, overrides=overrides, use_env=False
         )
-        assert clean_setting.config["account"]["cookie"] == "override_cookie_long_enough"
+        assert (
+            clean_setting.config["account"]["cookie"] == "override_cookie_long_enough"
+        )
 
-    def test_reload_nonexistent_file_falls_back_to_defaults(self, clean_setting, tmp_path):
+    def test_reload_nonexistent_file_falls_back_to_defaults(
+        self, clean_setting, tmp_path
+    ):
         # Nonexistent file path logs a warning and falls back to defaults (does NOT raise).
         missing = str(tmp_path / "nope.yaml")
         clean_setting.reload_config(config_file=missing, use_env=False)
@@ -127,9 +129,7 @@ class TestReloadConfig:
         assert clean_setting.config_path is None
 
     def test_reload_empty_file_uses_defaults(self, clean_setting, empty_config_file):
-        clean_setting.reload_config(
-            config_file=empty_config_file, use_env=False
-        )
+        clean_setting.reload_config(config_file=empty_config_file, use_env=False)
         # empty file yields empty dict, HoyoSettings fills defaults
         assert "account" in clean_setting.config
         assert clean_setting.config["enable"] is True
@@ -142,7 +142,9 @@ class TestReloadConfig:
         with pytest.raises(ValueError):
             clean_setting.reload_config(config_file=str(bad), use_env=False)
 
-    def test_reload_use_env_true_reads_env_over_file(self, clean_setting, config_file, monkeypatch):
+    def test_reload_use_env_true_reads_env_over_file(
+        self, clean_setting, config_file, monkeypatch
+    ):
         # BaseSettings reads env regardless; use_env=True confirms env priority over file.
         monkeypatch.setenv("HOYO_ASSISTANT_ENABLE", "false")
         clean_setting.reload_config(config_file=config_file, use_env=True)
@@ -156,7 +158,9 @@ class TestReloadConfig:
         clean_setting.reload_config(config_file=config_file, use_env=False)
         assert clean_setting.config["enable"] is False
 
-    def test_reload_use_env_true_picks_env(self, clean_setting, config_file, monkeypatch):
+    def test_reload_use_env_true_picks_env(
+        self, clean_setting, config_file, monkeypatch
+    ):
         monkeypatch.setenv("HOYO_ASSISTANT_ENABLE", "false")
         clean_setting.reload_config(config_file=config_file, use_env=True)
         # env priority > init/file
@@ -199,7 +203,9 @@ class TestGetEffectiveConfig:
         assert "very_long_stoken_value_x" not in effective["account"]["stoken"]
 
     def test_redact_true_masks_token_in_nested(self, clean_setting):
-        clean_setting.config["cloud_games"]["cn"]["genshin"]["token"] = "cloud_token_long_enough"
+        clean_setting.config["cloud_games"]["cn"]["genshin"]["token"] = (
+            "cloud_token_long_enough"
+        )
         effective = clean_setting.get_effective_config(redact=True)
         masked = effective["cloud_games"]["cn"]["genshin"]["token"]
         assert "***" in masked
@@ -282,9 +288,7 @@ class TestSaveConfigSync:
 
     def test_save_preserves_unicode(self, clean_setting, tmp_path):
         out = tmp_path / "uni.yaml"
-        clean_setting.save_config_sync(
-            str(out), {"device": {"name": "测试设备"}}
-        )
+        clean_setting.save_config_sync(str(out), {"device": {"name": "测试设备"}})
         content = out.read_text(encoding="utf-8")
         assert "测试设备" in content
 
@@ -362,7 +366,9 @@ class TestEnvOverrides:
         clean_setting.reload_config(config_file=config_file, use_env=True)
         assert clean_setting.config["enable"] is False
 
-    def test_env_enable_true_overrides_file_false(self, clean_setting, tmp_path, monkeypatch):
+    def test_env_enable_true_overrides_file_false(
+        self, clean_setting, tmp_path, monkeypatch
+    ):
         # file has enable=False, env has True -> env wins
         f = tmp_path / "c.yaml"
         f.write_text("enable: false\n", encoding="utf-8")

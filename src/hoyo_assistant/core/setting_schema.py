@@ -112,7 +112,6 @@ class GamesOSConfig(BaseGamesConfig):
     lang: str = "zh-cn"
 
 
-
 class GamesConfig(BaseConfigModel):
     cn: GamesCNConfig = Field(default_factory=GamesCNConfig)
     os: GamesOSConfig = Field(default_factory=GamesOSConfig)
@@ -143,7 +142,6 @@ class CloudGamesConfig(BaseConfigModel):
 
 class WebActivityConfig(BaseConfigModel):
     activities: list[str] = Field(default_factory=list)
-
 
 
 class HoyoSettings(BaseSettings):

@@ -1,6 +1,5 @@
 """Tests for tasks/ modules."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,23 +7,20 @@ import pytest
 from hoyo_assistant.core import CookieError, StokenError
 from hoyo_assistant.tasks.base import BaseCloudGame
 from hoyo_assistant.tasks.chinese import cloud_games as cn_cloud_games
-from hoyo_assistant.tasks.chinese import game_signin
 from hoyo_assistant.tasks.chinese.game_signin import (
+    ZZZ,
     GameCheckin,
     Genshin,
     Honkai2,
     Honkai3rd,
     Honkaisr,
     TearsOfThemis,
-    ZZZ,
     checkin_game,
     run_task as cn_run_task,
 )
-from hoyo_assistant.tasks.community import miyoushe
 from hoyo_assistant.tasks.community.miyoushe import Mihoyobbs
 from hoyo_assistant.tasks.overseas import cloud_games as os_cloud_games
 from hoyo_assistant.tasks.web import activities
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,7 +36,9 @@ def make_response(json_data=None, text_data="", status=200):
     return resp
 
 
-def mock_http(get_return=None, get_side_effect=None, post_return=None, post_side_effect=None):
+def mock_http(
+    get_return=None, get_side_effect=None, post_return=None, post_side_effect=None
+):
     """Create a mock http object with async get/post."""
     http = MagicMock()
     http.get = AsyncMock()
@@ -81,14 +79,16 @@ class TestBaseCloudGame:
 
     @pytest.mark.asyncio
     async def test_check_in_success_with_free_time(self):
-        resp = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "600", "send_freetime": "100"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "600", "send_freetime": "100"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
         clear = AsyncMock()
         http = mock_http(get_return=resp)
         with patch("hoyo_assistant.tasks.base.http", http):
@@ -99,14 +99,16 @@ class TestBaseCloudGame:
 
     @pytest.mark.asyncio
     async def test_check_in_limit_no_retry(self):
-        resp = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "600", "send_freetime": "0"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "600", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
         clear = AsyncMock()
         http = mock_http(get_return=resp)
         with patch("hoyo_assistant.tasks.base.http", http):
@@ -116,22 +118,26 @@ class TestBaseCloudGame:
 
     @pytest.mark.asyncio
     async def test_check_in_retry_success(self):
-        first = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "300", "send_freetime": "0"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
-        second = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "600", "send_freetime": "0"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
+        first = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "300", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
+        second = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "600", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
         clear = AsyncMock()
         http = mock_http(get_side_effect=[first, second])
         with patch("hoyo_assistant.tasks.base.http", http):
@@ -141,22 +147,26 @@ class TestBaseCloudGame:
 
     @pytest.mark.asyncio
     async def test_check_in_retry_fail(self):
-        first = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "300", "send_freetime": "0"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
-        second = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "300", "send_freetime": "0"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
+        first = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "300", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
+        second = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "300", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
         clear = AsyncMock()
         http = mock_http(get_side_effect=[first, second])
         with patch("hoyo_assistant.tasks.base.http", http):
@@ -167,14 +177,16 @@ class TestBaseCloudGame:
     @pytest.mark.asyncio
     async def test_check_in_retry_high_free_seconds(self):
         """retry_on_limit=True but free_seconds >= 600 → no retry, limit_fail."""
-        resp = make_response({
-            "retcode": 0,
-            "data": {
-                "free_time": {"free_time": "700", "send_freetime": "0"},
-                "play_card": {"short_msg": "active"},
-                "coin": {"coin_num": "50"},
-            },
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "700", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
         clear = AsyncMock()
         http = mock_http(get_return=resp)
         with patch("hoyo_assistant.tasks.base.http", http):
@@ -246,10 +258,12 @@ class TestGameCheckin:
         mock_account.get_account_list = AsyncMock(
             return_value=[("Player", "uid123", "cn_gf01")]
         )
-        resp = make_response({
-            "retcode": 0,
-            "data": {"awards": [{"name": "item", "cnt": 1}]},
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"awards": [{"name": "item", "cnt": 1}]},
+            }
+        )
         http = mock_http(get_return=resp)
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
@@ -276,10 +290,12 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_get_award_success(self, mock_config):
-        resp = make_response({
-            "retcode": 0,
-            "data": {"awards": [{"name": "Primogem", "cnt": 100}]},
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"awards": [{"name": "Primogem", "cnt": 100}]},
+            }
+        )
         http = mock_http(get_return=resp)
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
@@ -303,10 +319,12 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_get_checkin_rewards_success(self, mock_config):
-        resp = make_response({
-            "retcode": 0,
-            "data": {"awards": [{"name": "item", "cnt": 1}]},
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"awards": [{"name": "item", "cnt": 1}]},
+            }
+        )
         http = mock_http(get_return=resp)
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
@@ -319,10 +337,12 @@ class TestGameCheckin:
     @pytest.mark.asyncio
     async def test_get_checkin_rewards_retry_then_success(self, mock_config):
         fail_resp = make_response({"retcode": -1})
-        success_resp = make_response({
-            "retcode": 0,
-            "data": {"awards": [{"name": "item", "cnt": 1}]},
-        })
+        success_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"awards": [{"name": "item", "cnt": 1}]},
+            }
+        )
         http = mock_http(get_side_effect=[fail_resp, success_resp])
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
@@ -358,10 +378,12 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_is_sign_success(self, mock_config):
-        resp = make_response({
-            "retcode": 0,
-            "data": {"is_sign": False, "total_sign_day": 1},
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"is_sign": False, "total_sign_day": 1},
+            }
+        )
         http = mock_http(get_return=resp)
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
@@ -374,10 +396,12 @@ class TestGameCheckin:
     @pytest.mark.asyncio
     async def test_is_sign_cookie_refresh(self, mock_config):
         expired = make_response({"retcode": -100})
-        success = make_response({
-            "retcode": 0,
-            "data": {"is_sign": True, "total_sign_day": 2},
-        })
+        success = make_response(
+            {
+                "retcode": 0,
+                "data": {"is_sign": True, "total_sign_day": 2},
+            }
+        )
         http = mock_http(get_side_effect=[expired, success])
         mock_login = MagicMock()
         mock_login.update_cookie_token = AsyncMock(return_value=True)
@@ -407,10 +431,12 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_check_in_success(self, mock_config):
-        resp = make_response({
-            "retcode": 0,
-            "data": {"success": 0},
-        })
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"success": 0},
+            }
+        )
         http = mock_http(post_return=resp)
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
@@ -436,10 +462,12 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_check_in_captcha_dict(self, mock_config):
-        captcha_resp = make_response({
-            "retcode": 0,
-            "data": {"success": 1, "gt": "gt_val", "challenge": "ch_val"},
-        })
+        captcha_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"success": 1, "gt": "gt_val", "challenge": "ch_val"},
+            }
+        )
         success_resp = make_response({"retcode": 0, "data": {"success": 0}})
         http = mock_http(post_side_effect=[captcha_resp, success_resp])
         mock_captcha = MagicMock()
@@ -458,10 +486,12 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_check_in_captcha_none(self, mock_config):
-        captcha_resp = make_response({
-            "retcode": 0,
-            "data": {"success": 1, "gt": "gt_val", "challenge": "ch_val"},
-        })
+        captcha_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"success": 1, "gt": "gt_val", "challenge": "ch_val"},
+            }
+        )
         success_resp = make_response({"retcode": 0, "data": {"success": 0}})
         http = mock_http(post_side_effect=[captcha_resp, success_resp])
         mock_captcha = MagicMock()
@@ -527,7 +557,11 @@ class TestGameCheckin:
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
             checkin.checkin_rewards = [{"name": "item", "cnt": 1}] * 5
             checkin.is_sign = AsyncMock(
-                return_value={"is_sign": False, "total_sign_day": 1, "first_bind": False}
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
             )
             resp = make_response({"retcode": 0, "data": {"success": 0}})
             checkin.check_in = AsyncMock(return_value=resp)
@@ -541,7 +575,11 @@ class TestGameCheckin:
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
             checkin.checkin_rewards = [{"name": "item", "cnt": 1}] * 5
             checkin.is_sign = AsyncMock(
-                return_value={"is_sign": False, "total_sign_day": 1, "first_bind": False}
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
             )
             resp = make_response({"retcode": -5003, "data": {}})
             checkin.check_in = AsyncMock(return_value=resp)
@@ -555,7 +593,11 @@ class TestGameCheckin:
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
             checkin.checkin_rewards = [{"name": "item", "cnt": 1}] * 5
             checkin.is_sign = AsyncMock(
-                return_value={"is_sign": False, "total_sign_day": 1, "first_bind": False}
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
             )
             resp = make_response({}, status=429)
             checkin.check_in = AsyncMock(return_value=resp)
@@ -569,7 +611,11 @@ class TestGameCheckin:
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
             checkin.checkin_rewards = [{"name": "item", "cnt": 1}] * 5
             checkin.is_sign = AsyncMock(
-                return_value={"is_sign": False, "total_sign_day": 1, "first_bind": False}
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
             )
             resp = make_response({"retcode": 0, "data": {"success": 1}})
             checkin.check_in = AsyncMock(return_value=resp)
@@ -583,7 +629,11 @@ class TestGameCheckin:
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
             checkin.checkin_rewards = [{"name": "item", "cnt": 1}] * 5
             checkin.is_sign = AsyncMock(
-                return_value={"is_sign": False, "total_sign_day": 1, "first_bind": False}
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
             )
             resp = make_response({"retcode": -1, "data": None})
             checkin.check_in = AsyncMock(return_value=resp)
@@ -607,7 +657,11 @@ class TestGameCheckin:
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
             checkin.checkin_rewards = [{"name": "item", "cnt": 1}] * 5
             checkin.is_sign = AsyncMock(
-                return_value={"is_sign": False, "total_sign_day": 1, "first_bind": False}
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
             )
             checkin.check_in = AsyncMock(return_value=None)
             result = await checkin.sign_account()
@@ -655,9 +709,14 @@ class TestGameCheckin:
         mock_instance = MagicMock()
         mock_instance.init = AsyncMock()
         mock_instance.sign_account = AsyncMock(return_value="done")
-        with patch("hoyo_assistant.tasks.chinese.game_signin.Honkai2", return_value=mock_instance):
-            with patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config):
-                result = await cn_run_task()
+        with (
+            patch(
+                "hoyo_assistant.tasks.chinese.game_signin.Honkai2",
+                return_value=mock_instance,
+            ),
+            patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
+        ):
+            result = await cn_run_task()
         assert "done" in result
 
     def test_subclass_honkai2(self, mock_config):
@@ -731,16 +790,18 @@ class TestMihoyobbs:
 
     @pytest.mark.asyncio
     async def test_get_tasks_list_already_done(self, mock_config):
-        resp = make_response({
-            "message": "OK",
-            "retcode": 0,
-            "data": {
-                "can_get_points": 0,
-                "already_received_points": 10,
-                "total_points": 100,
-                "states": [],
-            },
-        })
+        resp = make_response(
+            {
+                "message": "OK",
+                "retcode": 0,
+                "data": {
+                    "can_get_points": 0,
+                    "already_received_points": 10,
+                    "total_points": 100,
+                    "states": [],
+                },
+            }
+        )
         http = mock_http(get_return=resp)
         bbs = self._make_bbs(mock_config)
         with patch("hoyo_assistant.tasks.community.miyoushe.http", http):
@@ -750,18 +811,20 @@ class TestMihoyobbs:
 
     @pytest.mark.asyncio
     async def test_get_tasks_list_mission_done(self, mock_config):
-        resp = make_response({
-            "message": "OK",
-            "retcode": 0,
-            "data": {
-                "can_get_points": 20,
-                "already_received_points": 10,
-                "total_points": 100,
-                "states": [
-                    {"mission_id": 58, "is_get_award": True},
-                ],
-            },
-        })
+        resp = make_response(
+            {
+                "message": "OK",
+                "retcode": 0,
+                "data": {
+                    "can_get_points": 20,
+                    "already_received_points": 10,
+                    "total_points": 100,
+                    "states": [
+                        {"mission_id": 58, "is_get_award": True},
+                    ],
+                },
+            }
+        )
         http = mock_http(get_return=resp)
         bbs = self._make_bbs(mock_config)
         with patch("hoyo_assistant.tasks.community.miyoushe.http", http):
@@ -770,18 +833,20 @@ class TestMihoyobbs:
 
     @pytest.mark.asyncio
     async def test_get_tasks_list_mission_not_done(self, mock_config):
-        resp = make_response({
-            "message": "OK",
-            "retcode": 0,
-            "data": {
-                "can_get_points": 20,
-                "already_received_points": 10,
-                "total_points": 100,
-                "states": [
-                    {"mission_id": 58, "is_get_award": False},
-                ],
-            },
-        })
+        resp = make_response(
+            {
+                "message": "OK",
+                "retcode": 0,
+                "data": {
+                    "can_get_points": 20,
+                    "already_received_points": 10,
+                    "total_points": 100,
+                    "states": [
+                        {"mission_id": 58, "is_get_award": False},
+                    ],
+                },
+            }
+        )
         http = mock_http(get_return=resp)
         bbs = self._make_bbs(mock_config)
         with patch("hoyo_assistant.tasks.community.miyoushe.http", http):
@@ -791,16 +856,18 @@ class TestMihoyobbs:
     @pytest.mark.asyncio
     async def test_get_tasks_list_cookie_refresh(self, mock_config):
         expired = make_response({"message": "err", "retcode": -100, "data": {}})
-        success = make_response({
-            "message": "OK",
-            "retcode": 0,
-            "data": {
-                "can_get_points": 0,
-                "already_received_points": 10,
-                "total_points": 100,
-                "states": [],
-            },
-        })
+        success = make_response(
+            {
+                "message": "OK",
+                "retcode": 0,
+                "data": {
+                    "can_get_points": 0,
+                    "already_received_points": 10,
+                    "total_points": 100,
+                    "states": [],
+                },
+            }
+        )
         http = mock_http(get_side_effect=[expired, success])
         mock_login = MagicMock()
         mock_login.get_stoken_cookie = MagicMock(return_value="cookie")
@@ -943,14 +1010,18 @@ class TestMihoyobbs:
 
     @pytest.mark.asyncio
     async def test_get_pass_challenge_success(self, mock_config):
-        captcha_resp = make_response({
-            "retcode": 0,
-            "data": {"gt": "gt_val", "challenge": "ch_val"},
-        })
-        verify_resp = make_response({
-            "retcode": 0,
-            "data": {"challenge": "verified_chall"},
-        })
+        captcha_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"gt": "gt_val", "challenge": "ch_val"},
+            }
+        )
+        verify_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"challenge": "verified_chall"},
+            }
+        )
         http = mock_http(get_return=captcha_resp)
         http.post = AsyncMock(return_value=verify_resp)
         mock_captcha = MagicMock()
@@ -976,10 +1047,12 @@ class TestMihoyobbs:
 
     @pytest.mark.asyncio
     async def test_get_pass_challenge_captcha_none(self, mock_config):
-        captcha_resp = make_response({
-            "retcode": 0,
-            "data": {"gt": "gt_val", "challenge": "ch_val"},
-        })
+        captcha_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {"gt": "gt_val", "challenge": "ch_val"},
+            }
+        )
         http = mock_http(get_return=captcha_resp)
         mock_captcha = MagicMock()
         mock_captcha.bbs_captcha = MagicMock(return_value=None)
@@ -1097,9 +1170,13 @@ class TestCNCloudGames:
     async def test_run_task_with_token(self, mock_config):
         mock_config["cloud_games"]["cn"]["genshin"]["token"] = "test_token"
         mock_config["cloud_games"]["cn"]["zzz"]["token"] = "test_token2"
-        with patch.object(BaseCloudGame, "check_in", new=AsyncMock(return_value="result")):
-            with patch("hoyo_assistant.tasks.chinese.cloud_games.config", mock_config):
-                result = await cn_cloud_games.run_task()
+        with (
+            patch.object(
+                BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
+            ),
+            patch("hoyo_assistant.tasks.chinese.cloud_games.config", mock_config),
+        ):
+            result = await cn_cloud_games.run_task()
         assert "result" in result
 
     @pytest.mark.asyncio
@@ -1112,9 +1189,13 @@ class TestCNCloudGames:
     async def test_run_task_partial_token(self, mock_config):
         mock_config["cloud_games"]["cn"]["genshin"]["token"] = "test_token"
         mock_config["cloud_games"]["cn"]["zzz"]["token"] = ""
-        with patch.object(BaseCloudGame, "check_in", new=AsyncMock(return_value="result")):
-            with patch("hoyo_assistant.tasks.chinese.cloud_games.config", mock_config):
-                result = await cn_cloud_games.run_task()
+        with (
+            patch.object(
+                BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
+            ),
+            patch("hoyo_assistant.tasks.chinese.cloud_games.config", mock_config),
+        ):
+            result = await cn_cloud_games.run_task()
         assert "result" in result
 
 
@@ -1160,9 +1241,13 @@ class TestOSCloudGames:
         mock_config["cloud_games"]["os"]["genshin"]["token"] = "test_token"
         mock_config["cloud_games"]["os"]["zzz"]["token"] = "test_token2"
         mock_config["cloud_games"]["os"]["lang"] = "en-us"
-        with patch.object(BaseCloudGame, "check_in", new=AsyncMock(return_value="result")):
-            with patch("hoyo_assistant.tasks.overseas.cloud_games.config", mock_config):
-                result = await os_cloud_games.run_task()
+        with (
+            patch.object(
+                BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
+            ),
+            patch("hoyo_assistant.tasks.overseas.cloud_games.config", mock_config),
+        ):
+            result = await os_cloud_games.run_task()
         assert "result" in result
 
     @pytest.mark.asyncio
@@ -1175,7 +1260,11 @@ class TestOSCloudGames:
     async def test_run_task_partial_token(self, mock_config):
         mock_config["cloud_games"]["os"]["genshin"]["token"] = "test_token"
         mock_config["cloud_games"]["os"]["zzz"]["token"] = ""
-        with patch.object(BaseCloudGame, "check_in", new=AsyncMock(return_value="result")):
-            with patch("hoyo_assistant.tasks.overseas.cloud_games.config", mock_config):
-                result = await os_cloud_games.run_task()
+        with (
+            patch.object(
+                BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
+            ),
+            patch("hoyo_assistant.tasks.overseas.cloud_games.config", mock_config),
+        ):
+            result = await os_cloud_games.run_task()
         assert "result" in result

@@ -1,10 +1,6 @@
 """Tests for cloud game enable logic."""
 
-import pytest
 from unittest.mock import patch
-
-from hoyo_assistant.tasks.chinese import cloud_games as cn_cloud
-from hoyo_assistant.tasks.overseas import cloud_games as os_cloud
 
 
 class TestCNCloudGameEnable:

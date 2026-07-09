@@ -1,10 +1,9 @@
 """Tests for hoyo_assistant.core.push module (PushHandler, providers, push())."""
 
-import asyncio
 import inspect
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from hoyo_assistant.core import push as push_mod
 from hoyo_assistant.core.push import PushHandler, async_push, get_push_title
@@ -139,8 +138,7 @@ class TestMsgReplace:
 class TestBuildPushPayload:
     def test_returns_three_strings(self):
         h = PushHandler()
-        with patch("hoyo_assistant.core.push.t",
-                   side_effect=lambda k, **kw: k):
+        with patch("hoyo_assistant.core.push.t", side_effect=lambda k, **kw: k):
             title, body, full = h._build_push_payload(0, "hello")
             assert isinstance(title, str)
             assert isinstance(body, str)
@@ -159,9 +157,7 @@ class TestBuildPushPayload:
         with patch("hoyo_assistant.core.push.t", side_effect=fake_t):
             _, body, _ = h._build_push_payload(0, "")
             # body template call should have content="EMPTY"
-            body_call = next(
-                c for c in calls if c[0] == "push.template_body"
-            )
+            body_call = next(c for c in calls if c[0] == "push.template_body")
             assert body_call[1]["content"] == "EMPTY"
 
     def test_none_message_uses_placeholder(self):
@@ -187,9 +183,10 @@ class TestTelegramProvider:
     async def test_sends_post(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"telegram": {"bot_token": "BOT", "chat_id": "123"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"telegram": {"bot_token": "BOT", "chat_id": "123"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.telegram(0, "msg")
             mock_http.post.assert_awaited_once()
@@ -201,13 +198,18 @@ class TestTelegramProvider:
     async def test_custom_api_url(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"telegram": {
-                "api_url": "custom.telegram.example",
-                "bot_token": "BOT",
-                "chat_id": "1",
-            }}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {
+                    "telegram": {
+                        "api_url": "custom.telegram.example",
+                        "bot_token": "BOT",
+                        "chat_id": "1",
+                    }
+                }
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.telegram(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -219,8 +221,10 @@ class TestFtqqProvider:
     async def test_sends_post_with_sendkey(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config({"ftqq": {"sendkey": "SK123"}}), \
-             patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"ftqq": {"sendkey": "SK123"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.ftqq(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -234,9 +238,10 @@ class TestPushplusProvider:
     async def test_sends_post(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"pushplus": {"token": "TOK", "topic": "TPC"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"pushplus": {"token": "TOK", "topic": "TPC"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.pushplus(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -248,8 +253,10 @@ class TestPushmeProvider:
     @pytest.mark.asyncio
     async def test_missing_key_returns_early(self):
         h = PushHandler()
-        with _patch_setting_config({"pushme": {"token": ""}}), \
-             patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"pushme": {"token": ""}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock()
             await h.pushme(0, "msg")
             mock_http.post.assert_not_awaited()
@@ -258,8 +265,10 @@ class TestPushmeProvider:
     async def test_success_path(self):
         h = PushHandler()
         resp = _mock_resp(status=200, text="success")
-        with _patch_setting_config({"pushme": {"token": "KEY"}}), \
-             patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"pushme": {"token": "KEY"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.pushme(0, "msg")
             mock_http.post.assert_awaited_once()
@@ -268,9 +277,11 @@ class TestPushmeProvider:
     async def test_non_success_response_logs_error(self):
         h = PushHandler()
         resp = _mock_resp(status=500, text="fail")
-        with _patch_setting_config({"pushme": {"token": "KEY"}}), \
-             patch.object(h, "http") as mock_http, \
-             patch("hoyo_assistant.core.push.log") as mock_log:
+        with (
+            _patch_setting_config({"pushme": {"token": "KEY"}}),
+            patch.object(h, "http") as mock_http,
+            patch("hoyo_assistant.core.push.log") as mock_log,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.pushme(0, "msg")
             mock_log.error.assert_called()
@@ -280,9 +291,10 @@ class TestCqhttpProvider:
     @pytest.mark.asyncio
     async def test_qq_and_group_both_set_aborts(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"cqhttp": {"cqhttp_qq": "1", "cqhttp_group": "2"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"cqhttp": {"cqhttp_qq": "1", "cqhttp_group": "2"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock()
             await h.cqhttp(0, "msg")
             mock_http.post.assert_not_awaited()
@@ -291,10 +303,18 @@ class TestCqhttpProvider:
     async def test_qq_only_sends(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"cqhttp": {"cqhttp_qq": "123", "cqhttp_group": None,
-                        "cqhttp_url": "http://cq/"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {
+                    "cqhttp": {
+                        "cqhttp_qq": "123",
+                        "cqhttp_group": None,
+                        "cqhttp_url": "http://cq/",
+                    }
+                }
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.cqhttp(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -305,10 +325,18 @@ class TestCqhttpProvider:
     async def test_group_only_sends(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"cqhttp": {"cqhttp_qq": None, "cqhttp_group": "456",
-                        "cqhttp_url": "http://cq/"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {
+                    "cqhttp": {
+                        "cqhttp_qq": None,
+                        "cqhttp_group": "456",
+                        "cqhttp_url": "http://cq/",
+                    }
+                }
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.cqhttp(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -322,13 +350,20 @@ class TestWecomProvider:
         h = PushHandler()
         token_resp = _mock_resp({"access_token": "AT"})
         send_resp = _mock_resp()
-        with _patch_setting_config(
-            {"wecom": {"secret": "S", "wechat_id": "CID", "agentid": "9",
-                       "touser": "@all"}}
-        ), patch.object(h, "http") as mock_http:
-            mock_http.post = AsyncMock(
-                side_effect=[token_resp, send_resp]
-            )
+        with (
+            _patch_setting_config(
+                {
+                    "wecom": {
+                        "secret": "S",
+                        "wechat_id": "CID",
+                        "agentid": "9",
+                        "touser": "@all",
+                    }
+                }
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(side_effect=[token_resp, send_resp])
             await h.wecom(0, "msg")
             assert mock_http.post.await_count == 2
             # first call: gettoken (url passed as kwarg)
@@ -345,9 +380,12 @@ class TestPushdeerProvider:
     async def test_sends_get(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"pushdeer": {"api_url": "http://pd", "token": "TK"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {"pushdeer": {"api_url": "http://pd", "token": "TK"}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.get = AsyncMock(return_value=resp)
             await h.pushdeer(0, "msg")
             _, kwargs = mock_http.get.call_args
@@ -360,9 +398,12 @@ class TestBarkProvider:
     async def test_sends_get(self):
         h = PushHandler()
         resp = _mock_resp({"message": "ok"})
-        with _patch_setting_config(
-            {"bark": {"api_url": "http://bark", "token": "TK", "icon": "x"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {"bark": {"api_url": "http://bark", "token": "TK", "icon": "x"}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.get = AsyncMock(return_value=resp)
             await h.bark(0, "msg")
             _, kwargs = mock_http.get.call_args
@@ -374,9 +415,12 @@ class TestGotifyProvider:
     async def test_sends_post_with_priority(self):
         h = PushHandler()
         resp = _mock_resp({"errmsg": "ok"})
-        with _patch_setting_config(
-            {"gotify": {"api_url": "http://g", "token": "TK", "priority": 5}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {"gotify": {"api_url": "http://g", "token": "TK", "priority": 5}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.gotify(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -389,9 +433,10 @@ class TestIftttProvider:
     async def test_success_returns_one(self):
         h = PushHandler()
         resp = _mock_resp(text="ok")
-        with _patch_setting_config(
-            {"ifttt": {"event": "EV", "key": "KY"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"ifttt": {"event": "EV", "key": "KY"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             result = await h.ifttt(0, "msg")
             assert result == 1
@@ -400,9 +445,10 @@ class TestIftttProvider:
     async def test_errors_returns_zero(self):
         h = PushHandler()
         resp = _mock_resp(text='{"errors":["bad"]}')
-        with _patch_setting_config(
-            {"ifttt": {"event": "EV", "key": "KY"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"ifttt": {"event": "EV", "key": "KY"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             result = await h.ifttt(0, "msg")
             assert result == 0
@@ -413,9 +459,10 @@ class TestWebhookProvider:
     async def test_sends_post(self):
         h = PushHandler()
         resp = _mock_resp({"errmsg": "ok"})
-        with _patch_setting_config(
-            {"webhook": {"webhook_url": "http://wh"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"webhook": {"webhook_url": "http://wh"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.webhook(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -429,9 +476,10 @@ class TestQmsgProvider:
     async def test_sends_post(self):
         h = PushHandler()
         resp = _mock_resp({"reason": "ok"})
-        with _patch_setting_config(
-            {"qmsg": {"key": "K"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"qmsg": {"key": "K"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.qmsg(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -444,10 +492,11 @@ class TestDiscordProvider:
     async def test_success_status_204(self):
         h = PushHandler()
         resp = _mock_resp(status=204, text="")
-        with _patch_setting_config(
-            {"discord": {"webhook": "http://dc"}}
-        ), patch.object(h, "http") as mock_http, \
-             patch("hoyo_assistant.core.push.log") as mock_log:
+        with (
+            _patch_setting_config({"discord": {"webhook": "http://dc"}}),
+            patch.object(h, "http") as mock_http,
+            patch("hoyo_assistant.core.push.log") as mock_log,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.discord(0, "msg")
             mock_http.post.assert_awaited_once()
@@ -457,10 +506,11 @@ class TestDiscordProvider:
     async def test_non_204_logs_warning(self):
         h = PushHandler()
         resp = _mock_resp(status=400, text="bad")
-        with _patch_setting_config(
-            {"discord": {"webhook": "http://dc"}}
-        ), patch.object(h, "http") as mock_http, \
-             patch("hoyo_assistant.core.push.log") as mock_log:
+        with (
+            _patch_setting_config({"discord": {"webhook": "http://dc"}}),
+            patch.object(h, "http") as mock_http,
+            patch("hoyo_assistant.core.push.log") as mock_log,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.discord(0, "msg")
             mock_log.warning.assert_called()
@@ -486,9 +536,10 @@ class TestServerchan3Provider:
     async def test_valid_key_sends_post(self):
         h = PushHandler()
         resp = _mock_resp()
-        with _patch_setting_config(
-            {"serverchan3": {"sendkey": "sctp123t", "tags": ""}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"serverchan3": {"sendkey": "sctp123t", "tags": ""}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.serverchan3(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -498,11 +549,13 @@ class TestServerchan3Provider:
     @pytest.mark.asyncio
     async def test_invalid_key_raises_value_error(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"serverchan3": {"sendkey": "invalid_key", "tags": ""}}
+        with (
+            _patch_setting_config(
+                {"serverchan3": {"sendkey": "invalid_key", "tags": ""}}
+            ),
+            pytest.raises(ValueError),
         ):
-            with pytest.raises(ValueError):
-                await h.serverchan3(0, "msg")
+            await h.serverchan3(0, "msg")
 
 
 class TestWecomrobotProvider:
@@ -510,15 +563,16 @@ class TestWecomrobotProvider:
     async def test_sends_post(self):
         h = PushHandler()
         resp = _mock_resp({"errmsg": "ok"})
-        with _patch_setting_config(
-            {"wecomrobot": {"url": "http://wr", "mobile": "13800000000"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {"wecomrobot": {"url": "http://wr", "mobile": "13800000000"}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.wecomrobot(0, "msg")
             _, kwargs = mock_http.post.call_args
-            assert kwargs["json"]["text"]["mentioned_mobile_list"] == [
-                "13800000000"
-            ]
+            assert kwargs["json"]["text"]["mentioned_mobile_list"] == ["13800000000"]
 
 
 class TestFeishubotProvider:
@@ -526,9 +580,10 @@ class TestFeishubotProvider:
     async def test_sends_post(self):
         h = PushHandler()
         resp = _mock_resp({"msg": "ok"})
-        with _patch_setting_config(
-            {"feishubot": {"webhook": "http://fs"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config({"feishubot": {"webhook": "http://fs"}}),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.feishubot(0, "msg")
             _, kwargs = mock_http.post.call_args
@@ -540,9 +595,12 @@ class TestDingrobotProvider:
     async def test_no_secret(self):
         h = PushHandler()
         resp = _mock_resp({"errmsg": "ok"})
-        with _patch_setting_config(
-            {"dingrobot": {"webhook": "http://dr", "secret": ""}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {"dingrobot": {"webhook": "http://dr", "secret": ""}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.dingrobot(0, "msg")
             url = mock_http.post.call_args.kwargs["url"]
@@ -553,9 +611,12 @@ class TestDingrobotProvider:
     async def test_with_secret_appends_sign(self):
         h = PushHandler()
         resp = _mock_resp({"errmsg": "ok"})
-        with _patch_setting_config(
-            {"dingrobot": {"webhook": "http://dr", "secret": "SEC"}}
-        ), patch.object(h, "http") as mock_http:
+        with (
+            _patch_setting_config(
+                {"dingrobot": {"webhook": "http://dr", "secret": "SEC"}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
             mock_http.post = AsyncMock(return_value=resp)
             await h.dingrobot(0, "msg")
             url = mock_http.post.call_args.kwargs["url"]
@@ -577,9 +638,12 @@ class TestPushDispatch:
     @pytest.mark.asyncio
     async def test_error_push_only_skips_success_status(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "error_push_only": True, "active": ["telegram"]}
-        ), patch.object(h, "telegram", new=AsyncMock()) as mock_tg:
+        with (
+            _patch_setting_config(
+                {"enable": True, "error_push_only": True, "active": ["telegram"]}
+            ),
+            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
+        ):
             result = await h.push(0, "msg")
             assert result == 0
             mock_tg.assert_not_awaited()
@@ -587,20 +651,26 @@ class TestPushDispatch:
     @pytest.mark.asyncio
     async def test_error_push_only_allows_failure_status(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "error_push_only": True, "active": ["telegram"]}
-        ), patch.object(h, "telegram", new=AsyncMock()) as mock_tg:
-            result = await h.push(1, "msg")
+        with (
+            _patch_setting_config(
+                {"enable": True, "error_push_only": True, "active": ["telegram"]}
+            ),
+            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
+        ):
+            await h.push(1, "msg")
             mock_tg.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_dispatches_all_active_channels(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram", "ftqq", "pushplus"]}
-        ), patch.object(h, "telegram", new=AsyncMock()) as mock_tg, \
-             patch.object(h, "ftqq", new=AsyncMock()) as mock_ft, \
-             patch.object(h, "pushplus", new=AsyncMock()) as mock_pp:
+        with (
+            _patch_setting_config(
+                {"enable": True, "active": ["telegram", "ftqq", "pushplus"]}
+            ),
+            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
+            patch.object(h, "ftqq", new=AsyncMock()) as mock_ft,
+            patch.object(h, "pushplus", new=AsyncMock()) as mock_pp,
+        ):
             result = await h.push(0, "msg")
             assert result == 0
             mock_tg.assert_awaited_once()
@@ -610,9 +680,10 @@ class TestPushDispatch:
     @pytest.mark.asyncio
     async def test_unknown_channel_name_skipped(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["nonexistent_channel"]}
-        ), patch("hoyo_assistant.core.push.log") as mock_log:
+        with (
+            _patch_setting_config({"enable": True, "active": ["nonexistent_channel"]}),
+            patch("hoyo_assistant.core.push.log") as mock_log,
+        ):
             result = await h.push(0, "msg")
             # func is None → warning, push_success stays True → 0
             assert result == 0
@@ -621,19 +692,24 @@ class TestPushDispatch:
     @pytest.mark.asyncio
     async def test_provider_exception_returns_one(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram"]}
-        ), patch.object(h, "telegram",
-                        new=AsyncMock(side_effect=RuntimeError("boom"))):
+        with (
+            _patch_setting_config({"enable": True, "active": ["telegram"]}),
+            patch.object(
+                h, "telegram", new=AsyncMock(side_effect=RuntimeError("boom"))
+            ),
+        ):
             result = await h.push(0, "msg")
             assert result == 1
 
     @pytest.mark.asyncio
     async def test_msg_replace_applied_before_dispatch(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram"], "push_block_keys": "secret"}
-        ), patch.object(h, "telegram", new=AsyncMock()) as mock_tg:
+        with (
+            _patch_setting_config(
+                {"enable": True, "active": ["telegram"], "push_block_keys": "secret"}
+            ),
+            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
+        ):
             await h.push(0, "my secret msg")
             # push() calls func(status, masked_msg) positionally
             sent_msg = mock_tg.call_args[0][1]
@@ -649,20 +725,21 @@ class TestPushDispatch:
         def fake_wintoast(status_id, msg):
             called["count"] += 1
 
-        with _patch_setting_config(
-            {"enable": True, "active": ["wintoast"]}
-        ), patch.object(h, "wintoast", side_effect=fake_wintoast):
+        with (
+            _patch_setting_config({"enable": True, "active": ["wintoast"]}),
+            patch.object(h, "wintoast", side_effect=fake_wintoast),
+        ):
             await h.push(0, "msg")
             assert called["count"] == 1
 
     @pytest.mark.asyncio
     async def test_partial_failure_returns_one(self):
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram", "ftqq"]}
-        ), patch.object(h, "telegram", new=AsyncMock()), \
-             patch.object(h, "ftqq",
-                          new=AsyncMock(side_effect=ValueError("x"))):
+        with (
+            _patch_setting_config({"enable": True, "active": ["telegram", "ftqq"]}),
+            patch.object(h, "telegram", new=AsyncMock()),
+            patch.object(h, "ftqq", new=AsyncMock(side_effect=ValueError("x"))),
+        ):
             result = await h.push(0, "msg")
             assert result == 1
 
@@ -683,9 +760,10 @@ class TestAsyncPush:
 
     @pytest.mark.asyncio
     async def test_async_push_dispatches_through_handler(self):
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram"]}
-        ), patch.object(PushHandler, "telegram", new=AsyncMock()) as mock_tg:
+        with (
+            _patch_setting_config({"enable": True, "active": ["telegram"]}),
+            patch.object(PushHandler, "telegram", new=AsyncMock()) as mock_tg,
+        ):
             await push_mod.push(0, "msg")
             mock_tg.assert_awaited_once()
 
@@ -696,13 +774,12 @@ class TestAsyncPush:
 class TestPushNetworkErrors:
     @pytest.mark.asyncio
     async def test_provider_timeout_caught_by_push_dispatch(self):
-        import asyncio as _asyncio
 
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram"]}
-        ), patch.object(h, "telegram",
-                        new=AsyncMock(side_effect=_asyncio.TimeoutError())):
+        with (
+            _patch_setting_config({"enable": True, "active": ["telegram"]}),
+            patch.object(h, "telegram", new=AsyncMock(side_effect=TimeoutError())),
+        ):
             result = await h.push(0, "msg")
             assert result == 1
 
@@ -711,11 +788,13 @@ class TestPushNetworkErrors:
         import aiohttp
 
         h = PushHandler()
-        with _patch_setting_config(
-            {"enable": True, "active": ["telegram"]}
-        ), patch.object(
-            h, "telegram",
-            new=AsyncMock(side_effect=aiohttp.ClientError("net")),
+        with (
+            _patch_setting_config({"enable": True, "active": ["telegram"]}),
+            patch.object(
+                h,
+                "telegram",
+                new=AsyncMock(side_effect=aiohttp.ClientError("net")),
+            ),
         ):
             result = await h.push(0, "msg")
             assert result == 1
@@ -725,12 +804,11 @@ class TestPushNetworkErrors:
         import aiohttp
 
         h = PushHandler()
-        with _patch_setting_config(
-            {"telegram": {"bot_token": "B", "chat_id": "1"}}
-        ), patch.object(h, "http") as mock_http:
-            mock_http.post = AsyncMock(
-                side_effect=aiohttp.ClientError("timeout")
-            )
+        with (
+            _patch_setting_config({"telegram": {"bot_token": "B", "chat_id": "1"}}),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
             with pytest.raises(aiohttp.ClientError):
                 await h.telegram(0, "msg")
 
@@ -742,9 +820,23 @@ class TestProviderRegistration:
     @pytest.mark.parametrize(
         "name",
         [
-            "telegram", "ftqq", "pushplus", "pushme", "cqhttp", "smtp",
-            "wecom", "wecomrobot", "pushdeer", "dingrobot", "feishubot",
-            "bark", "gotify", "ifttt", "webhook", "qmsg", "discord",
+            "telegram",
+            "ftqq",
+            "pushplus",
+            "pushme",
+            "cqhttp",
+            "smtp",
+            "wecom",
+            "wecomrobot",
+            "pushdeer",
+            "dingrobot",
+            "feishubot",
+            "bark",
+            "gotify",
+            "ifttt",
+            "webhook",
+            "qmsg",
+            "discord",
             "serverchan3",
         ],
     )
@@ -756,12 +848,27 @@ class TestProviderRegistration:
     def test_all_providers_async_except_wintoast(self):
         h = PushHandler()
         async_names = [
-            "telegram", "ftqq", "pushplus", "pushme", "cqhttp", "smtp",
-            "wecom", "wecomrobot", "pushdeer", "dingrobot", "feishubot",
-            "bark", "gotify", "ifttt", "webhook", "qmsg", "discord",
+            "telegram",
+            "ftqq",
+            "pushplus",
+            "pushme",
+            "cqhttp",
+            "smtp",
+            "wecom",
+            "wecomrobot",
+            "pushdeer",
+            "dingrobot",
+            "feishubot",
+            "bark",
+            "gotify",
+            "ifttt",
+            "webhook",
+            "qmsg",
+            "discord",
             "serverchan3",
         ]
         for name in async_names:
-            assert inspect.iscoroutinefunction(getattr(h, name)), \
+            assert inspect.iscoroutinefunction(getattr(h, name)), (
                 f"{name} should be async"
+            )
         assert not inspect.iscoroutinefunction(h.wintoast)

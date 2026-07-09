@@ -4,21 +4,24 @@ Functions like get_uid/get_mid/get_login_ticket read from the global
 `config["account"]["cookie"]`, so tests mock that via `patch`.
 """
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from hoyo_assistant.core.login import (
     get_login_ticket,
     get_mid,
-    get_uid,
     get_stoken_cookie,
+    get_uid,
+    require_cookie_token,
     require_mid,
     require_stoken,
-    require_cookie_token,
 )
 
 
-def _patch_config(cookie: str = "", stoken: str = "", stuid: str = "123", mid: str = "abc"):
+def _patch_config(
+    cookie: str = "", stoken: str = "", stuid: str = "123", mid: str = "abc"
+):
     """Patch the global config dict with the given values."""
     return patch(
         "hoyo_assistant.core.login.config",

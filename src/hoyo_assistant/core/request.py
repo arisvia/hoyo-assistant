@@ -120,7 +120,8 @@ class HttpClient:
         timeout = aiohttp.ClientTimeout(total=ASYNC_TIMEOUT)
 
         def json_serializer(x: Any) -> str:
-            return orjson.dumps(x).decode()
+            val = orjson.dumps(x).decode()
+            return str(val)
 
         self.session = aiohttp.ClientSession(
             connector=connector,

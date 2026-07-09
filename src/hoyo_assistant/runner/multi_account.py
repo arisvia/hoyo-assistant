@@ -7,15 +7,11 @@ from ..core import (
     CookieError,
     StatusCode,
     StokenError,
-    config,
-    http,
-    is_push_enabled,
     log,
-    push,
     setting,
     t,
 )
-from .single_account import run_once, run_single_account
+from .single_account import run_single_account
 
 
 def _normalize_targets(target_path: str | list[str] | None) -> list[str]:
@@ -89,7 +85,7 @@ async def run_multi_account(
         try:
             # Call run_single_account directly, which handles loading, running and pushing.
             run_code, _ = await run_single_account(full_path, use_env=use_env)
-        except (CookieError, StokenError) as e:
+        except (CookieError, StokenError):
             results["error"].append(file_name)
         except Exception as e:
             log.error(t("multi.exec_failed", file=file_name, error=e))

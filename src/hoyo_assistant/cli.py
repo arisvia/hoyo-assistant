@@ -179,9 +179,7 @@ def run_multi_manager(args: Any) -> None:
     else:
         target_path = None
 
-    asyncio.run(
-        run_multi_async(target_path, use_env=use_env)
-    )
+    asyncio.run(run_multi_async(target_path, use_env=use_env))
 
 
 def print_effective_config() -> None:
@@ -341,9 +339,7 @@ def main() -> None:
         config_target, cli_overrides = None, {}
     else:
         run_mode = _resolve_run_mode(args)
-        config_target, cli_overrides = build_cli_overrides(
-            args, run_mode
-        )
+        config_target, cli_overrides = build_cli_overrides(args, run_mode)
 
     # Reload config with runtime overrides (CLI > env > YAML).
     # Server mode intentionally ignores CLI/env runtime overrides for scheduler isolation.
@@ -370,7 +366,8 @@ def main() -> None:
         log_dir = getattr(args, "log_dir", None)
         if log_dir:
             from pathlib import Path
-            log_dir = Path(log_dir)
+
+            log_dir = str(Path(log_dir).resolve())
         no_log = getattr(args, "no_log", False)
         loghelper.setup_logger(
             log_level=log_level,

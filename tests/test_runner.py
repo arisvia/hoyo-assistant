@@ -7,9 +7,6 @@ the module namespace so tests exercise real logic. Fix the source imports to dro
 
 from __future__ import annotations
 
-import asyncio
-import os
-import tempfile
 from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +20,6 @@ from hoyo_assistant.core import (
     setting,
 )
 from hoyo_assistant.runner import multi_account, single_account
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -119,7 +115,9 @@ class TestInitializeConfig:
         assert msg is None
 
     @pytest.mark.asyncio
-    async def test_no_config_path_first_run_loads_default(self, cfg, reset_setting_path):
+    async def test_no_config_path_first_run_loads_default(
+        self, cfg, reset_setting_path
+    ):
         with patch.object(setting, "load_config") as mock_load:
             ok, msg = await single_account.initialize_config(None, use_env=True)
         mock_load.assert_called_once_with(None, use_env=True)
@@ -161,7 +159,10 @@ class TestHandleLogin:
             login_mod.login = AsyncMock()
             with patch.object(single_account, "tools") as tools_mod:
                 tools_mod.tidy_cookie = MagicMock(return_value="tidied")
-                with patch("hoyo_assistant.runner.single_account.asyncio.sleep", new=AsyncMock()):
+                with patch(
+                    "hoyo_assistant.runner.single_account.asyncio.sleep",
+                    new=AsyncMock(),
+                ):
                     await single_account.handle_login()
         login_mod.login.assert_awaited_once()
         assert config["account"]["cookie"] == "tidied"
@@ -388,8 +389,10 @@ class TestRunOnce:
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
         mock_http.clear_cookies = MagicMock()
-        with patch.object(setting, "load_config"), \
-             patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()):
+        with (
+            patch.object(setting, "load_config"),
+            patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()),
+        ):
             # Import path inside run_once uses `from ..core.request import http`
             with patch("hoyo_assistant.core.request.http", mock_http):
                 with pytest.raises(CookieError):
@@ -405,13 +408,27 @@ class TestRunOnce:
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
         mock_http.clear_cookies = MagicMock()
-        with patch.object(setting, "load_config"), \
-             patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()), \
-             patch("hoyo_assistant.runner.single_account.run_miyoushe_tasks", new=AsyncMock(return_value=("bbs", False))), \
-             patch("hoyo_assistant.runner.single_account.run_cn_signin_tasks", new=AsyncMock(return_value="cn")), \
-             patch("hoyo_assistant.runner.single_account.run_os_signin_tasks", new=AsyncMock(return_value="os")), \
-             patch("hoyo_assistant.runner.single_account.run_web_activity_tasks", new=AsyncMock()), \
-             patch("hoyo_assistant.core.request.http", mock_http):
+        with (
+            patch.object(setting, "load_config"),
+            patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()),
+            patch(
+                "hoyo_assistant.runner.single_account.run_miyoushe_tasks",
+                new=AsyncMock(return_value=("bbs", False)),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_cn_signin_tasks",
+                new=AsyncMock(return_value="cn"),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_os_signin_tasks",
+                new=AsyncMock(return_value="os"),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
+                new=AsyncMock(),
+            ),
+            patch("hoyo_assistant.core.request.http", mock_http),
+        ):
             code, msg = await single_account.run_once("x.yaml")
         assert code == StatusCode.SUCCESS.value
         assert "bbs" in msg
@@ -428,13 +445,27 @@ class TestRunOnce:
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
         mock_http.clear_cookies = MagicMock()
-        with patch.object(setting, "load_config"), \
-             patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()), \
-             patch("hoyo_assistant.runner.single_account.run_miyoushe_tasks", new=AsyncMock(return_value=("bbs", True))), \
-             patch("hoyo_assistant.runner.single_account.run_cn_signin_tasks", new=AsyncMock(return_value="")), \
-             patch("hoyo_assistant.runner.single_account.run_os_signin_tasks", new=AsyncMock(return_value="")), \
-             patch("hoyo_assistant.runner.single_account.run_web_activity_tasks", new=AsyncMock()), \
-             patch("hoyo_assistant.core.request.http", mock_http):
+        with (
+            patch.object(setting, "load_config"),
+            patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()),
+            patch(
+                "hoyo_assistant.runner.single_account.run_miyoushe_tasks",
+                new=AsyncMock(return_value=("bbs", True)),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_cn_signin_tasks",
+                new=AsyncMock(return_value=""),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_os_signin_tasks",
+                new=AsyncMock(return_value=""),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
+                new=AsyncMock(),
+            ),
+            patch("hoyo_assistant.core.request.http", mock_http),
+        ):
             with pytest.raises(StokenError):
                 await single_account.run_once("x.yaml")
 
@@ -449,13 +480,27 @@ class TestRunOnce:
         mock_http.cache.clear = MagicMock()
         mock_http.clear_cookies = MagicMock()
         captcha_text = "验证码 triggered"
-        with patch.object(setting, "load_config"), \
-             patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()), \
-             patch("hoyo_assistant.runner.single_account.run_miyoushe_tasks", new=AsyncMock(return_value=(captcha_text, False))), \
-             patch("hoyo_assistant.runner.single_account.run_cn_signin_tasks", new=AsyncMock(return_value="")), \
-             patch("hoyo_assistant.runner.single_account.run_os_signin_tasks", new=AsyncMock(return_value="")), \
-             patch("hoyo_assistant.runner.single_account.run_web_activity_tasks", new=AsyncMock()), \
-             patch("hoyo_assistant.core.request.http", mock_http):
+        with (
+            patch.object(setting, "load_config"),
+            patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()),
+            patch(
+                "hoyo_assistant.runner.single_account.run_miyoushe_tasks",
+                new=AsyncMock(return_value=(captcha_text, False)),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_cn_signin_tasks",
+                new=AsyncMock(return_value=""),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_os_signin_tasks",
+                new=AsyncMock(return_value=""),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
+                new=AsyncMock(),
+            ),
+            patch("hoyo_assistant.core.request.http", mock_http),
+        ):
             code, msg = await single_account.run_once("x.yaml")
         assert code == StatusCode.CAPTCHA_TRIGGERED.value
 
@@ -469,13 +514,27 @@ class TestRunOnce:
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
         mock_http.clear_cookies = MagicMock()
-        with patch.object(setting, "load_config"), \
-             patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()), \
-             patch("hoyo_assistant.runner.single_account.run_miyoushe_tasks", new=AsyncMock(side_effect=RuntimeError("boom"))), \
-             patch("hoyo_assistant.runner.single_account.run_cn_signin_tasks", new=AsyncMock(return_value="")), \
-             patch("hoyo_assistant.runner.single_account.run_os_signin_tasks", new=AsyncMock(return_value="")), \
-             patch("hoyo_assistant.runner.single_account.run_web_activity_tasks", new=AsyncMock()), \
-             patch("hoyo_assistant.core.request.http", mock_http):
+        with (
+            patch.object(setting, "load_config"),
+            patch("hoyo_assistant.runner.single_account.handle_login", new=AsyncMock()),
+            patch(
+                "hoyo_assistant.runner.single_account.run_miyoushe_tasks",
+                new=AsyncMock(side_effect=RuntimeError("boom")),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_cn_signin_tasks",
+                new=AsyncMock(return_value=""),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_os_signin_tasks",
+                new=AsyncMock(return_value=""),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
+                new=AsyncMock(),
+            ),
+            patch("hoyo_assistant.core.request.http", mock_http),
+        ):
             code, msg = await single_account.run_once("x.yaml")
         assert code == StatusCode.SUCCESS.value
 
@@ -491,9 +550,17 @@ class TestRunSingleAccount:
         mock_http = MagicMock()
         mock_http.__aenter__ = AsyncMock(return_value=mock_http)
         mock_http.__aexit__ = AsyncMock(return_value=None)
-        with patch("hoyo_assistant.runner.single_account.http", mock_http), \
-             patch("hoyo_assistant.runner.single_account.run_once", new=AsyncMock(return_value=(0, "ok"))), \
-             patch("hoyo_assistant.runner.single_account.is_push_enabled", return_value=False):
+        with (
+            patch("hoyo_assistant.runner.single_account.http", mock_http),
+            patch(
+                "hoyo_assistant.runner.single_account.run_once",
+                new=AsyncMock(return_value=(0, "ok")),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.is_push_enabled",
+                return_value=False,
+            ),
+        ):
             code, msg = await single_account.run_single_account("x.yaml", use_env=True)
         assert code == 0
         assert msg == "ok"
@@ -503,10 +570,18 @@ class TestRunSingleAccount:
         mock_http = MagicMock()
         mock_http.__aenter__ = AsyncMock(return_value=mock_http)
         mock_http.__aexit__ = AsyncMock(return_value=None)
-        with patch("hoyo_assistant.runner.single_account.http", mock_http), \
-             patch("hoyo_assistant.runner.single_account.run_once", new=AsyncMock(return_value=(1, "err"))), \
-             patch("hoyo_assistant.runner.single_account.is_push_enabled", return_value=True), \
-             patch("hoyo_assistant.runner.single_account.push") as push_mod:
+        with (
+            patch("hoyo_assistant.runner.single_account.http", mock_http),
+            patch(
+                "hoyo_assistant.runner.single_account.run_once",
+                new=AsyncMock(return_value=(1, "err")),
+            ),
+            patch(
+                "hoyo_assistant.runner.single_account.is_push_enabled",
+                return_value=True,
+            ),
+            patch("hoyo_assistant.runner.single_account.push") as push_mod,
+        ):
             push_mod.push = AsyncMock()
             code, msg = await single_account.run_single_account("x.yaml", use_env=False)
         assert code == 1
@@ -517,9 +592,17 @@ class TestRunSingleAccount:
         mock_http = MagicMock()
         mock_http.__aenter__ = AsyncMock(return_value=mock_http)
         mock_http.__aexit__ = AsyncMock(return_value=None)
-        with patch("hoyo_assistant.runner.single_account.http", mock_http), \
-             patch("hoyo_assistant.runner.single_account.run_once", new=AsyncMock(return_value=(0, "ok"))) as mock_once, \
-             patch("hoyo_assistant.runner.single_account.is_push_enabled", return_value=False):
+        with (
+            patch("hoyo_assistant.runner.single_account.http", mock_http),
+            patch(
+                "hoyo_assistant.runner.single_account.run_once",
+                new=AsyncMock(return_value=(0, "ok")),
+            ) as mock_once,
+            patch(
+                "hoyo_assistant.runner.single_account.is_push_enabled",
+                return_value=False,
+            ),
+        ):
             await single_account.run_single_account("x.yaml", use_env=False)
         mock_once.assert_awaited_once_with("x.yaml", use_env=False)
 
@@ -598,7 +681,9 @@ class TestCollectConfigPool:
 class TestRunMultiAccount:
     @pytest.mark.asyncio
     async def test_no_config_found_returns_failure(self):
-        with patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with patch(
+            "hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()
+        ):
             code, msg = await multi_account.run_multi_account(["/no/such"])
         assert code == StatusCode.FAILURE.value
 
@@ -606,9 +691,14 @@ class TestRunMultiAccount:
     async def test_success_all_ok(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(0, "ok"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(return_value=(0, "ok")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
@@ -618,9 +708,14 @@ class TestRunMultiAccount:
     async def test_all_errors_returns_failure(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(1, "err"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(return_value=(1, "err")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
@@ -633,9 +728,14 @@ class TestRunMultiAccount:
         f2 = tmp_path / "b.yaml"
         f2.write_text("x")
         results = iter([(0, "ok"), (1, "err")])
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=lambda *a, **k: next(results))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(side_effect=lambda *a, **k: next(results)),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f1), str(f2)])
@@ -645,9 +745,14 @@ class TestRunMultiAccount:
     async def test_captcha_triggered(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(3, "captcha"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(return_value=(3, "captcha")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
@@ -657,10 +762,18 @@ class TestRunMultiAccount:
     async def test_cookie_error_caught(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=CookieError("bad"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.is_push_enabled", return_value=False), \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(side_effect=CookieError("bad")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch(
+                "hoyo_assistant.runner.multi_account.is_push_enabled",
+                return_value=False,
+            ),
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
@@ -670,10 +783,18 @@ class TestRunMultiAccount:
     async def test_stoken_error_caught(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=StokenError("bad"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.is_push_enabled", return_value=False), \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(side_effect=StokenError("bad")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch(
+                "hoyo_assistant.runner.multi_account.is_push_enabled",
+                return_value=False,
+            ),
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
@@ -683,9 +804,14 @@ class TestRunMultiAccount:
     async def test_unknown_status_goes_to_close(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(99, "unknown"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(return_value=(99, "unknown")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
@@ -699,9 +825,14 @@ class TestRunMultiAccount:
         f = cfg_dir / "a.yaml"
         f.write_text("x")
         (cfg_dir / "template.yaml").write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(0, "ok"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(return_value=(0, "ok")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account(None)
@@ -715,11 +846,18 @@ class TestRunMultiAccount:
         # But run_single_account itself handles pushing, so if run_single_account raises CookieError,
         # it was already pushed inside run_single_account. We don't push inside run_multi_account.
         # Thus, we can test that run_multi_account safely catches the exception and marks it as failure.
-        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=CookieError("bad"))), \
-             patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
-             patch("hoyo_assistant.runner.multi_account.is_push_enabled", return_value=True), \
-             patch("hoyo_assistant.runner.multi_account.push") as push_mod, \
-             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
+        with (
+            patch(
+                "hoyo_assistant.runner.multi_account.run_single_account",
+                new=AsyncMock(side_effect=CookieError("bad")),
+            ),
+            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
+            patch(
+                "hoyo_assistant.runner.multi_account.is_push_enabled", return_value=True
+            ),
+            patch("hoyo_assistant.runner.multi_account.push") as push_mod,
+            patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
+        ):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
             http_mod.__aexit__ = AsyncMock(return_value=None)
             push_mod.push = AsyncMock()

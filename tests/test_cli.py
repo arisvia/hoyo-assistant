@@ -2,14 +2,12 @@
 
 import argparse
 import os
-import sys
 from copy import deepcopy
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from hoyo_assistant import cli
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,9 +27,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-c", "--config", dest="configs", nargs="+")
     parser.add_argument("-m", "--multi", action="store_true")
     parser.add_argument("-d", "--debug", action="store_true")
-    parser.add_argument(
-        "--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
-    )
+    parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--log-dir")
     parser.add_argument("--no-log", action="store_true")
 
@@ -329,17 +325,23 @@ class TestRichAndInteractive:
 
     def test_use_rich_output_auto_falls_back_to_interactive(self):
         env = {k: v for k, v in os.environ.items() if k != "HOYO_ASSISTANT_CLI_OUTPUT"}
-        with patch.dict(os.environ, env, clear=True), \
-             patch("hoyo_assistant.cli._is_interactive_terminal", return_value=True):
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("hoyo_assistant.cli._is_interactive_terminal", return_value=True),
+        ):
             assert cli._use_rich_output() is True
-        with patch.dict(os.environ, env, clear=True), \
-             patch("hoyo_assistant.cli._is_interactive_terminal", return_value=False):
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("hoyo_assistant.cli._is_interactive_terminal", return_value=False),
+        ):
             assert cli._use_rich_output() is False
 
     def test_use_rich_output_auto_empty_env(self):
         env = {k: v for k, v in os.environ.items() if k != "HOYO_ASSISTANT_CLI_OUTPUT"}
-        with patch.dict(os.environ, env, clear=True), \
-             patch("hoyo_assistant.cli._is_interactive_terminal", return_value=False):
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("hoyo_assistant.cli._is_interactive_terminal", return_value=False),
+        ):
             assert cli._use_rich_output() is False
 
 
@@ -429,76 +431,84 @@ def isolated_setting():
 
 class TestMainDispatch:
     def test_check_command_calls_validate_config(self, isolated_setting):
-        with patch("sys.argv", ["hoyo-cli", "check", "-c", "x.yaml"]), \
-             patch("hoyo_assistant.cli.validate_config") as mock_val, \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch("hoyo_assistant.cli.loghelper.setup_logger"), \
-             patch("hoyo_assistant.core.setting.reload_config") as mock_reload:
+        with (
+            patch("sys.argv", ["hoyo-cli", "check", "-c", "x.yaml"]),
+            patch("hoyo_assistant.cli.validate_config") as mock_val,
+            patch("hoyo_assistant.cli.print_banner"),
+            patch("hoyo_assistant.cli.loghelper.setup_logger"),
+            patch("hoyo_assistant.core.setting.reload_config") as mock_reload,
+        ):
             cli.main()
         mock_val.assert_called_once()
         mock_reload.assert_called_once()
 
     def test_template_command_calls_generate_template(self, isolated_setting):
-        with patch("sys.argv", ["hoyo-cli", "template", "-o", "out.yaml"]), \
-             patch("hoyo_assistant.cli.generate_template") as mock_gen, \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch("hoyo_assistant.cli.loghelper.setup_logger"), \
-             patch("hoyo_assistant.core.setting.reload_config"):
+        with (
+            patch("sys.argv", ["hoyo-cli", "template", "-o", "out.yaml"]),
+            patch("hoyo_assistant.cli.generate_template") as mock_gen,
+            patch("hoyo_assistant.cli.print_banner"),
+            patch("hoyo_assistant.cli.loghelper.setup_logger"),
+            patch("hoyo_assistant.core.setting.reload_config"),
+        ):
             cli.main()
         mock_gen.assert_called_once_with("out.yaml")
 
     def test_format_command_calls_fill_config(self, isolated_setting):
-        with patch("sys.argv", ["hoyo-cli", "format", "-c", "c.yaml"]), \
-             patch("hoyo_assistant.cli.fill_config_command") as mock_fill, \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch("hoyo_assistant.cli.loghelper.setup_logger"), \
-             patch("hoyo_assistant.core.setting.reload_config"):
+        with (
+            patch("sys.argv", ["hoyo-cli", "format", "-c", "c.yaml"]),
+            patch("hoyo_assistant.cli.fill_config_command") as mock_fill,
+            patch("hoyo_assistant.cli.print_banner"),
+            patch("hoyo_assistant.cli.loghelper.setup_logger"),
+            patch("hoyo_assistant.core.setting.reload_config"),
+        ):
             cli.main()
         mock_fill.assert_called_once_with("c.yaml", True)
 
     def test_format_command_no_backup(self, isolated_setting):
-        with patch(
-            "sys.argv", ["hoyo-cli", "format", "-c", "c.yaml", "--no-backup"]
-        ), \
-             patch("hoyo_assistant.cli.fill_config_command") as mock_fill, \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch("hoyo_assistant.cli.loghelper.setup_logger"), \
-             patch("hoyo_assistant.core.setting.reload_config"):
+        with (
+            patch("sys.argv", ["hoyo-cli", "format", "-c", "c.yaml", "--no-backup"]),
+            patch("hoyo_assistant.cli.fill_config_command") as mock_fill,
+            patch("hoyo_assistant.cli.print_banner"),
+            patch("hoyo_assistant.cli.loghelper.setup_logger"),
+            patch("hoyo_assistant.core.setting.reload_config"),
+        ):
             cli.main()
         mock_fill.assert_called_once_with("c.yaml", False)
 
     def test_server_command_starts_console(self, isolated_setting):
         mock_server = MagicMock()
         mock_server.start_interactive_console = MagicMock()
-        with patch("sys.argv", ["hoyo-cli", "server"]), \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch("hoyo_assistant.cli.loghelper.setup_logger"), \
-             patch("hoyo_assistant.core.setting.reload_config"), \
-             patch("hoyo_assistant.cli.server", mock_server), \
-             patch("hoyo_assistant.cli.ServerSettings"):
+        with (
+            patch("sys.argv", ["hoyo-cli", "server"]),
+            patch("hoyo_assistant.cli.print_banner"),
+            patch("hoyo_assistant.cli.loghelper.setup_logger"),
+            patch("hoyo_assistant.core.setting.reload_config"),
+            patch("hoyo_assistant.cli.server", mock_server),
+            patch("hoyo_assistant.cli.ServerSettings"),
+        ):
             cli.main()
         mock_server.start_interactive_console.assert_called_once()
 
     def test_main_config_error_exits(self, isolated_setting):
-        with patch("sys.argv", ["hoyo-cli"]), \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch(
-                 "hoyo_assistant.core.setting.reload_config",
-                 side_effect=ValueError("bad config"),
-             ):
-            with pytest.raises(SystemExit):
-                cli.main()
+        with (
+            patch("sys.argv", ["hoyo-cli"]),
+            patch("hoyo_assistant.cli.print_banner"),
+            patch(
+                "hoyo_assistant.core.setting.reload_config",
+                side_effect=ValueError("bad config"),
+            ),
+            pytest.raises(SystemExit),
+        ):
+            cli.main()
 
     def test_main_debug_uses_debug_log_level(self, isolated_setting):
-        with patch("sys.argv", ["hoyo-cli", "-d"]), \
-             patch("hoyo_assistant.cli.print_banner"), \
-             patch(
-                 "hoyo_assistant.cli.loghelper.setup_logger"
-             ) as mock_log, \
-             patch(
-                 "hoyo_assistant.cli.run_single"
-             ) as mock_run, \
-             patch("hoyo_assistant.core.setting.reload_config"):
+        with (
+            patch("sys.argv", ["hoyo-cli", "-d"]),
+            patch("hoyo_assistant.cli.print_banner"),
+            patch("hoyo_assistant.cli.loghelper.setup_logger") as mock_log,
+            patch("hoyo_assistant.cli.run_single"),
+            patch("hoyo_assistant.core.setting.reload_config"),
+        ):
             cli.main()
         # debug path calls setup_logger("DEBUG")
         mock_log.assert_called_once_with("DEBUG")

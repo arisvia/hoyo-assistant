@@ -14,7 +14,7 @@ from .setting import config
 
 def is_push_enabled() -> bool:
     """Check if push notifications are enabled.
-    
+
     Priority: env var HOYO_ASSISTANT_PUSH__ENABLE > config push.enable
     """
     env_enable = str(os.getenv("HOYO_ASSISTANT_PUSH__ENABLE", "")).strip().lower()

@@ -37,7 +37,7 @@ class PushHandler:
 
     def get_cfg(self) -> dict[str, Any]:
         """Get the push dictionary from the global config."""
-        return setting.config.get("push", {})
+        return cast(dict[str, Any], setting.config.get("push", {}))
 
     def get_val(self, section: str, key: str, default: Any = None) -> Any:
         """Get a value from push configuration."""
@@ -176,9 +176,7 @@ class PushHandler:
 
         async def get_background_url() -> str:
             try:
-                resp = await self.http.get(
-                    "https://www.loliapi.com/acg/pc/"
-                )
+                resp = await self.http.get("https://www.loliapi.com/acg/pc/")
                 return cast(str, resp.url)
             except Exception:
                 log.warning(t("push.smtp_img_fail"))
@@ -510,10 +508,7 @@ class PushHandler:
         cfg = self.get_cfg()
         if not cfg.get("enable", False):
             return 0
-        if (
-            cfg.get("error_push_only", False)
-            and status == 0
-        ):
+        if cfg.get("error_push_only", False) and status == 0:
             return 0
         log.info(t("push.execution_start"))
         active_channels = cfg.get("active", [])
@@ -537,9 +532,7 @@ class PushHandler:
         return 0 if push_success else 1
 
 
-async def async_push(
-    status: int, push_message: str | None
-) -> int:
+async def async_push(status: int, push_message: str | None) -> int:
     push_handler_instance = PushHandler()
     return await push_handler_instance.push(status, push_message)
 

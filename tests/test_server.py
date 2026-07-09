@@ -1,9 +1,6 @@
 """Tests for hoyo_assistant.server module."""
 
-import asyncio
-import sys
 import threading
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -72,9 +69,15 @@ class TestExecuteTask:
     def _patches(self):
         """Common patches for execute_task dependencies."""
         with (
-            patch("hoyo_assistant.server.run_single_account", new_callable=AsyncMock) as mock_single,
-            patch("hoyo_assistant.server.run_multi_account", new_callable=AsyncMock) as mock_multi,
-            patch("hoyo_assistant.server.push.push", new_callable=AsyncMock) as mock_push,
+            patch(
+                "hoyo_assistant.server.run_single_account", new_callable=AsyncMock
+            ) as mock_single,
+            patch(
+                "hoyo_assistant.server.run_multi_account", new_callable=AsyncMock
+            ) as mock_multi,
+            patch(
+                "hoyo_assistant.server.push.push", new_callable=AsyncMock
+            ) as mock_push,
             patch("hoyo_assistant.server.config", {"push": False}),
             patch("hoyo_assistant.server.log") as mock_log,
             patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k),
@@ -93,7 +96,9 @@ class TestExecuteTask:
 
         await execute_task(cfg)
 
-        mock_single.assert_awaited_once_with(config_path="/path/to/config.yaml", use_env=False)
+        mock_single.assert_awaited_once_with(
+            config_path="/path/to/config.yaml", use_env=False
+        )
 
     async def test_multi_mode_calls_run_multi_account(self, _patches):
         mock_multi = _patches["multi"]
@@ -102,7 +107,9 @@ class TestExecuteTask:
 
         await execute_task(cfg)
 
-        mock_multi.assert_awaited_once_with(target_path="/path/to/targets", use_env=False)
+        mock_multi.assert_awaited_once_with(
+            target_path="/path/to/targets", use_env=False
+        )
 
     async def test_single_mode_list_config_path_takes_first(self, _patches):
         mock_single = _patches["single"]
@@ -195,8 +202,10 @@ class TestExecuteTask:
 # ---------------------------------------------------------------------------
 class TestPrintHelp:
     def test_does_not_raise(self):
-        with patch("hoyo_assistant.server.console") as mock_console, \
-             patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k):
+        with (
+            patch("hoyo_assistant.server.console") as mock_console,
+            patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k),
+        ):
             print_help()
             mock_console.print.assert_called_once()
 
@@ -325,9 +334,13 @@ class TestStartInteractiveConsole:
         ctxs = []
         ctxs.append(patch("hoyo_assistant.server.console"))
         ctxs.append(patch("hoyo_assistant.server.execute_task", new_callable=AsyncMock))
-        ctxs.append(patch("hoyo_assistant.server.time.sleep", side_effect=lambda *a: None))
+        ctxs.append(
+            patch("hoyo_assistant.server.time.sleep", side_effect=lambda *a: None)
+        )
         ctxs.append(patch("hoyo_assistant.server.threading.Thread"))
-        ctxs.append(patch("hoyo_assistant.server.asyncio.run", side_effect=lambda coro: None))
+        ctxs.append(
+            patch("hoyo_assistant.server.asyncio.run", side_effect=lambda coro: None)
+        )
         ctxs.append(patch("hoyo_assistant.server.log"))
         ctxs.append(patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k))
         ctxs.append(patch("hoyo_assistant.server.setting.reload_config"))
@@ -546,10 +559,13 @@ class TestStartInteractiveConsole:
 
         with (
             patch("hoyo_assistant.server.console", mock_console),
-            patch("hoyo_assistant.server.execute_task", new_callable=AsyncMock) as mock_exec,
+            patch("hoyo_assistant.server.execute_task", new_callable=AsyncMock),
             patch("hoyo_assistant.server.time.sleep", side_effect=lambda *a: None),
             patch("hoyo_assistant.server.threading.Thread"),
-            patch("hoyo_assistant.server.asyncio.run", side_effect=RuntimeError("init fail")),
+            patch(
+                "hoyo_assistant.server.asyncio.run",
+                side_effect=RuntimeError("init fail"),
+            ),
             patch("hoyo_assistant.server.log") as mock_log,
             patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k),
             patch("hoyo_assistant.server.setting.reload_config"),
@@ -569,7 +585,7 @@ class TestStartInteractiveConsole:
             patch("hoyo_assistant.server.console", mock_console),
             patch("hoyo_assistant.server.execute_task", new_callable=AsyncMock),
             patch("hoyo_assistant.server.time.sleep", side_effect=lambda *a: None),
-            patch("hoyo_assistant.server.threading.Thread") as mock_thread,
+            patch("hoyo_assistant.server.threading.Thread"),
             patch("hoyo_assistant.server.asyncio.run", side_effect=lambda coro: None),
             patch("hoyo_assistant.server.log"),
             patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k),
