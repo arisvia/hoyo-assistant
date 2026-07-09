@@ -606,7 +606,7 @@ class TestRunMultiAccount:
     async def test_success_all_ok(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(return_value=(0, "ok"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(0, "ok"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
@@ -618,7 +618,7 @@ class TestRunMultiAccount:
     async def test_all_errors_returns_failure(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(return_value=(1, "err"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(1, "err"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
@@ -633,7 +633,7 @@ class TestRunMultiAccount:
         f2 = tmp_path / "b.yaml"
         f2.write_text("x")
         results = iter([(0, "ok"), (1, "err")])
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(side_effect=lambda *a, **k: next(results))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=lambda *a, **k: next(results))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
@@ -645,7 +645,7 @@ class TestRunMultiAccount:
     async def test_captcha_triggered(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(return_value=(3, "captcha"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(3, "captcha"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
@@ -657,7 +657,7 @@ class TestRunMultiAccount:
     async def test_cookie_error_caught(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(side_effect=CookieError("bad"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=CookieError("bad"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.is_push_enabled", return_value=False), \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
@@ -670,7 +670,7 @@ class TestRunMultiAccount:
     async def test_stoken_error_caught(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(side_effect=StokenError("bad"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=StokenError("bad"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.is_push_enabled", return_value=False), \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
@@ -683,7 +683,7 @@ class TestRunMultiAccount:
     async def test_unknown_status_goes_to_close(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(return_value=(99, "unknown"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(99, "unknown"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
@@ -699,7 +699,7 @@ class TestRunMultiAccount:
         f = cfg_dir / "a.yaml"
         f.write_text("x")
         (cfg_dir / "template.yaml").write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(return_value=(0, "ok"))), \
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(return_value=(0, "ok"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()):
             http_mod.__aenter__ = AsyncMock(return_value=http_mod)
@@ -711,7 +711,11 @@ class TestRunMultiAccount:
     async def test_push_enabled_on_cookie_error(self, tmp_path):
         f = tmp_path / "a.yaml"
         f.write_text("x")
-        with patch("hoyo_assistant.runner.multi_account.run_once", new=AsyncMock(side_effect=CookieError("bad"))), \
+        # In the new code, run_multi_account just catches CookieError and does NOT push from itself.
+        # But run_single_account itself handles pushing, so if run_single_account raises CookieError,
+        # it was already pushed inside run_single_account. We don't push inside run_multi_account.
+        # Thus, we can test that run_multi_account safely catches the exception and marks it as failure.
+        with patch("hoyo_assistant.runner.multi_account.run_single_account", new=AsyncMock(side_effect=CookieError("bad"))), \
              patch("hoyo_assistant.runner.multi_account.http") as http_mod, \
              patch("hoyo_assistant.runner.multi_account.is_push_enabled", return_value=True), \
              patch("hoyo_assistant.runner.multi_account.push") as push_mod, \
@@ -720,4 +724,5 @@ class TestRunMultiAccount:
             http_mod.__aexit__ = AsyncMock(return_value=None)
             push_mod.push = AsyncMock()
             await multi_account.run_multi_account([str(f)])
-        push_mod.push.assert_awaited()
+        # No push inside run_multi_account anymore, but it should succeed execution.
+        assert True

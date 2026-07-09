@@ -223,10 +223,19 @@ async def run_single_account(
 ) -> tuple[int, str]:
     # Keep compatibility with test/mocked callables that only accept positional config_path.
     async with http:
-        if use_env:
-            run_code, run_msg = await run_once(config_path)
-        else:
-            run_code, run_msg = await run_once(config_path, use_env=use_env)
+        try:
+            if use_env:
+                run_code, run_msg = await run_once(config_path)
+            else:
+                run_code, run_msg = await run_once(config_path, use_env=use_env)
+        except (CookieError, StokenError) as e:
+            if is_push_enabled():
+                try:
+                    await push.push(StatusCode.FAILURE.value, str(e))
+                except Exception as pe:
+                    log.error(t("cli.task.push_failed", error=pe))
+            raise e
+
         if not is_push_enabled():
             return run_code, run_msg
 

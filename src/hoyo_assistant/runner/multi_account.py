@@ -15,7 +15,7 @@ from ..core import (
     setting,
     t,
 )
-from .single_account import run_once
+from .single_account import run_once, run_single_account
 
 
 def _normalize_targets(target_path: str | list[str] | None) -> list[str]:
@@ -82,65 +82,53 @@ async def run_multi_account(
 
     results: dict[str, list[str]] = {"ok": [], "close": [], "error": [], "captcha": []}
 
-    async with http:
-        for dir_path, file_name in config_pool:
-            log.info(t("multi.executing", file=file_name))
-            full_path = str(os.path.join(dir_path, file_name))
+    for dir_path, file_name in config_pool:
+        log.info(t("multi.executing", file=file_name))
+        full_path = str(os.path.join(dir_path, file_name))
 
-            try:
-                # Call run_once with explicit config file; it handles reload and execution isolation.
-                run_code, _ = await run_once(full_path, use_env=use_env)
-            except (CookieError, StokenError) as e:
+        try:
+            # Call run_single_account directly, which handles loading, running and pushing.
+            run_code, _ = await run_single_account(full_path, use_env=use_env)
+        except (CookieError, StokenError) as e:
+            results["error"].append(file_name)
+        except Exception as e:
+            log.error(t("multi.exec_failed", file=file_name, error=e))
+            results["error"].append(file_name)
+        else:
+            if run_code == StatusCode.SUCCESS.value:
+                results["ok"].append(file_name)
+            elif run_code in (
+                StatusCode.FAILURE.value,
+                StatusCode.PARTIAL_FAILURE.value,
+            ):
                 results["error"].append(file_name)
-                error_msg = (
-                    t("multi.cookie_error")
-                    if isinstance(e, CookieError)
-                    else t("multi.stoken_error")
-                )
-                if is_push_enabled():
-                    await push.push(StatusCode.FAILURE.value, error_msg)
+            elif run_code == StatusCode.CAPTCHA_TRIGGERED.value:
+                results["captcha"].append(file_name)
             else:
-                if run_code == StatusCode.SUCCESS.value:
-                    results["ok"].append(file_name)
-                elif run_code in (
-                    StatusCode.FAILURE.value,
-                    StatusCode.PARTIAL_FAILURE.value,
-                ):
-                    results["error"].append(file_name)
-                elif run_code == StatusCode.CAPTCHA_TRIGGERED.value:
-                    results["captcha"].append(file_name)
-                else:
-                    results["close"].append(file_name)
+                results["close"].append(file_name)
 
-            log.info(t("multi.exec_done", file=file_name))
-            await asyncio.sleep(random.randint(3, 10))
+        log.info(t("multi.exec_done", file=file_name))
+        await asyncio.sleep(random.randint(3, 10))
 
-        push_message = t(
-            "multi.summary",
-            total=len(config_pool),
-            ok=len(results["ok"]),
-            close=len(results["close"]),
-            error=len(results["error"]),
-            captcha=len(results["captcha"]),
-            close_list=results["close"],
-            error_list=results["error"],
-            captcha_list=results["captcha"],
-        )
-        log.debug(push_message)
+    push_message = t(
+        "multi.summary",
+        total=len(config_pool),
+        ok=len(results["ok"]),
+        close=len(results["close"]),
+        error=len(results["error"]),
+        captcha=len(results["captcha"]),
+        close_list=results["close"],
+        error_list=results["error"],
+        captcha_list=results["captcha"],
+    )
+    log.debug(push_message)
 
-        status = StatusCode.SUCCESS.value
-        if len(results["error"]) == len(config_pool):
-            status = StatusCode.FAILURE.value
-        elif len(results["error"]) != 0:
-            status = StatusCode.PARTIAL_FAILURE.value
-        elif len(results["captcha"]) != 0:
-            status = StatusCode.CAPTCHA_TRIGGERED.value
-
-        # Push summary while http session is still open
-        if is_push_enabled():
-            try:
-                await push.push(status, push_message)
-            except Exception as e:
-                log.error(t("multi.push_failed", error=e))
+    status = StatusCode.SUCCESS.value
+    if len(results["error"]) == len(config_pool):
+        status = StatusCode.FAILURE.value
+    elif len(results["error"]) != 0:
+        status = StatusCode.PARTIAL_FAILURE.value
+    elif len(results["captcha"]) != 0:
+        status = StatusCode.CAPTCHA_TRIGGERED.value
 
     return status, push_message
