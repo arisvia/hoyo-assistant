@@ -36,6 +36,12 @@ class BaseCloudGame:
 
         try:
             res = await http.get(url=self.url, headers=self.headers)
+            if res.status in (400, 401, 403):
+                ret_msg += t("games.cloud.token_invalid", game=self.game)
+                log.warning(ret_msg)
+                await self.clear_cookie_func()
+                return ret_msg
+
             data = await res.json()
 
             if data["retcode"] == 0:

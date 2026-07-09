@@ -118,7 +118,6 @@ class GamesConfig(BaseConfigModel):
 
 
 class CloudGameItemConfig(BaseConfigModel):
-    enable: bool = False
     token: str = ""
 
 

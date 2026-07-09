@@ -696,11 +696,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(return_value=(0, "ok")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
         assert code == StatusCode.SUCCESS.value
 
@@ -713,11 +710,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(return_value=(1, "err")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
         assert code == StatusCode.FAILURE.value
 
@@ -733,11 +727,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(side_effect=lambda *a, **k: next(results)),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f1), str(f2)])
         assert code == StatusCode.PARTIAL_FAILURE.value
 
@@ -750,11 +741,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(return_value=(3, "captcha")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
         assert code == StatusCode.CAPTCHA_TRIGGERED.value
 
@@ -767,15 +755,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(side_effect=CookieError("bad")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
-            patch(
-                "hoyo_assistant.runner.multi_account.is_push_enabled",
-                return_value=False,
-            ),
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
         assert code == StatusCode.FAILURE.value
 
@@ -788,15 +769,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(side_effect=StokenError("bad")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
-            patch(
-                "hoyo_assistant.runner.multi_account.is_push_enabled",
-                return_value=False,
-            ),
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
         assert code == StatusCode.FAILURE.value
 
@@ -809,11 +783,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(return_value=(99, "unknown")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account([str(f)])
         assert code == StatusCode.SUCCESS.value
 
@@ -830,11 +801,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(return_value=(0, "ok")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
             code, msg = await multi_account.run_multi_account(None)
         assert code == StatusCode.SUCCESS.value
 
@@ -851,16 +819,8 @@ class TestRunMultiAccount:
                 "hoyo_assistant.runner.multi_account.run_single_account",
                 new=AsyncMock(side_effect=CookieError("bad")),
             ),
-            patch("hoyo_assistant.runner.multi_account.http") as http_mod,
-            patch(
-                "hoyo_assistant.runner.multi_account.is_push_enabled", return_value=True
-            ),
-            patch("hoyo_assistant.runner.multi_account.push") as push_mod,
             patch("hoyo_assistant.runner.multi_account.asyncio.sleep", new=AsyncMock()),
         ):
-            http_mod.__aenter__ = AsyncMock(return_value=http_mod)
-            http_mod.__aexit__ = AsyncMock(return_value=None)
-            push_mod.push = AsyncMock()
             await multi_account.run_multi_account([str(f)])
         # No push inside run_multi_account anymore, but it should succeed execution.
         assert True
