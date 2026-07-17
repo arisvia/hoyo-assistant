@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sys
 import threading
 import time
@@ -8,7 +7,7 @@ from datetime import datetime, timedelta
 from rich.console import Console
 from rich.panel import Panel
 
-from .core import config, log, push, setting, t
+from .core import is_push_enabled, log, push, setting, t
 from .core.models import ServerSettings
 from .runner import run_multi_account, run_single_account
 
@@ -249,12 +248,7 @@ async def execute_task(cfg: ServerSettings) -> None:
     elapsed = time.time() - start_time
     log.info(t("cli.task.server_task_done", time=elapsed, status=status_code))
 
-    env_enable = str(os.getenv("HOYO_ASSISTANT_PUSH__ENABLE", "")).strip().lower()
-    cfg_push = config.get("push", "")
-    cfg_enable = str(cfg_push).strip().lower() in {"true", "1", "on", "yes"}
-    push_enabled = env_enable in {"true", "1", "on", "yes"} or cfg_enable
-
-    if push_enabled:
+    if is_push_enabled():
         # Push summary
         try:
             await push.push(status_code, msg)

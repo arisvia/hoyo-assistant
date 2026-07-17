@@ -63,8 +63,8 @@ class GameCheckin:
             "Accept": "application/json, text/plain, */*",
             "DS": "",
             "Origin": "https://webstatic.mihoyo.com",
-            "x-rpc-app_version": config.get("app_version", MIHOYOBBS_VERSION),
-            "User-Agent": config["games"]["cn"]["useragent"],
+            "x-rpc-app_version": MIHOYOBBS_VERSION,
+            "User-Agent": tools.resolve_user_agent(config["client"]["user_agent"]),
             "x-rpc-client_type": MIHOYOBBS_CLIENT_TYPE_WEB,
             "Referer": "https://webstatic.mihoyo.com/bbs/event/signin-ys/index.html?act_id="
             + self.act_id,
@@ -72,7 +72,7 @@ class GameCheckin:
             "Accept-Language": "zh-CN,en-US;q=0.8",
             "X-Requested-With": "com.mihoyo.hyperion",
             "Cookie": config["account"]["cookie"],
-            "x-rpc-device_id": config["device"]["id"],
+            "x-rpc-device_id": config["client"]["device"]["id"],
         }
 
     async def get_award(self) -> list[Any]:

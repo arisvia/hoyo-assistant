@@ -52,11 +52,14 @@ def config_file(tmp_path):
             "stoken": "test_stoken_value",
             "mid": "test_mid_value",
         },
-        "device": {
-            "name": "TestDevice",
-            "model": "TestModel",
-            "id": "test-device-id",
-            "fp": "",
+        "client": {
+            "user_agent": "",
+            "device": {
+                "name": "TestDevice",
+                "model": "TestModel",
+                "id": "test-device-id",
+                "fp": "",
+            },
         },
         "mihoyobbs": {
             "checkin": True,
@@ -136,9 +139,8 @@ class TestReloadConfig:
 
     def test_reload_invalid_config_raises(self, clean_setting, tmp_path):
         bad = tmp_path / "bad.yaml"
-        # version expects int; pass string that can't coerce -> not validation error
-        # Use a field with wrong type to force validation failure
-        bad.write_text("version: not_an_int\n", encoding="utf-8")
+        # account must be a dict; pass a scalar to force validation failure
+        bad.write_text("account: not_a_dict\n", encoding="utf-8")
         with pytest.raises(ValueError):
             clean_setting.reload_config(config_file=str(bad), use_env=False)
 
@@ -251,7 +253,8 @@ class TestValidateConfigFile:
 
     def test_invalid_config_returns_errors(self, tmp_path):
         bad = tmp_path / "bad.yaml"
-        bad.write_text("version: not_an_int\n", encoding="utf-8")
+        # account must be a dict; scalar forces validation failure
+        bad.write_text("account: not_a_dict\n", encoding="utf-8")
         ok, errors = setting.validate_config_file(str(bad))
         assert ok is False
         assert len(errors) >= 1
@@ -266,11 +269,11 @@ class TestValidateConfigFile:
 class TestSaveConfigSync:
     def test_save_to_explicit_path(self, clean_setting, tmp_path):
         out = tmp_path / "out.yaml"
-        # Use non-default values so exclude_defaults=True keeps them
-        clean_setting.save_config_sync(str(out), {"enable": False, "version": 99})
+        # Use a non-default value so exclude_defaults=True keeps it
+        clean_setting.save_config_sync(str(out), {"enable": False})
         assert out.exists()
         loaded = yaml.safe_load(out.read_text(encoding="utf-8"))
-        assert loaded == {"enable": False, "version": 99}
+        assert loaded == {"enable": False}
 
     def test_save_defaults_to_config_path(self, clean_setting, tmp_path):
         out = tmp_path / "cfg.yaml"
@@ -288,7 +291,9 @@ class TestSaveConfigSync:
 
     def test_save_preserves_unicode(self, clean_setting, tmp_path):
         out = tmp_path / "uni.yaml"
-        clean_setting.save_config_sync(str(out), {"device": {"name": "测试设备"}})
+        clean_setting.save_config_sync(
+            str(out), {"client": {"device": {"name": "测试设备"}}}
+        )
         content = out.read_text(encoding="utf-8")
         assert "测试设备" in content
 
@@ -310,19 +315,19 @@ class TestAutoFillConfigFile:
     def test_auto_fill_partial_config(self, tmp_path):
         partial = tmp_path / "partial.yaml"
         # Provide a non-default value so it survives exclude_defaults=True.
-        partial.write_text("version: 20\n", encoding="utf-8")
+        partial.write_text("enable: false\n", encoding="utf-8")
         ok, msg = setting.auto_fill_config_file(str(partial), backup=False)
         assert ok is True
         loaded = yaml.safe_load(partial.read_text(encoding="utf-8"))
-        assert loaded.get("version") == 20
+        assert loaded.get("enable") is False
 
     def test_auto_fill_complete_config_writes_file(self, tmp_path):
         f = tmp_path / "c.yaml"
-        f.write_text("version: 99\n", encoding="utf-8")
+        f.write_text("enable: false\n", encoding="utf-8")
         ok, msg = setting.auto_fill_config_file(str(f), backup=False)
         assert ok is True
         loaded = yaml.safe_load(f.read_text(encoding="utf-8"))
-        assert loaded.get("version") == 99
+        assert loaded.get("enable") is False
 
     def test_auto_fill_creates_backup(self, tmp_path):
         f = tmp_path / "c.yaml"
@@ -349,7 +354,8 @@ class TestAutoFillConfigFile:
 
     def test_auto_fill_invalid_config_returns_error(self, tmp_path):
         bad = tmp_path / "bad.yaml"
-        bad.write_text("version: not_an_int\n", encoding="utf-8")
+        # account must be a dict; scalar forces validation failure
+        bad.write_text("account: not_a_dict\n", encoding="utf-8")
         ok, msg = setting.auto_fill_config_file(str(bad), backup=False)
         assert ok is False
         assert isinstance(msg, str)
@@ -444,8 +450,12 @@ class TestDefaultConfig:
         assert isinstance(setting.DEFAULT_CONFIG, dict)
 
     def test_default_config_has_required_keys(self):
-        for key in ["enable", "account", "device", "games", "push"]:
+        for key in ["enable", "account", "client", "games", "push"]:
             assert key in setting.DEFAULT_CONFIG
+
+    def test_default_config_has_no_version(self):
+        # version field was removed as dead code
+        assert "version" not in setting.DEFAULT_CONFIG
 
     def test_default_config_account_has_cookie(self):
         assert "cookie" in setting.DEFAULT_CONFIG["account"]

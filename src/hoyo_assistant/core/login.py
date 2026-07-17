@@ -64,23 +64,6 @@ async def login() -> None:
             raise StokenError(t("account.stoken_fetch_fail"))
         log.info(t("account.stoken_ok"))
 
-    # 刷新 cookie
-    if require_cookie_token() and require_stoken():
-        log.info(t("account.refreshing_cookie"))
-        req = await http.get(
-            API_BBS_GET_MULTI_TOKEN,
-            params={
-                "uid": uid,
-                "token_types": "3",
-                "login_ticket": config["account"]["login_ticket"],
-            },
-        )
-        data = await req.json()
-        if data["retcode"] != 0:
-            await setting.clear_cookie()
-            raise CookieError(t("account.cookie_refresh_fail"))
-        log.info(t("account.cookie_refresh_ok"))
-
 
 def get_login_ticket() -> str | None:
     ticket_match = re.search(

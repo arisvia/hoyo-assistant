@@ -40,7 +40,7 @@ These variables control system behavior outside the main configuration schema:
 ## Architecture Quick Map
 
 - `src/hoyo_assistant/cli.py`: arg parsing, run-mode resolution, config bootstrap/reload, runner dispatch.
-- `src/hoyo_assistant/core/setting.py` + `core/setting_schema.py`: file/env merge, runtime overrides, schema validation.
+- `src/hoyo_assistant/core/setting.py` + `core/setting_schema.py`: file/env merge, runtime overrides, schema validation. Top-level config keys: `enable`, `account`, `client` (groups `user_agent` + `device`), `mihoyobbs`, `games` (`cn`/`os`), `cloud_games` (`cn`/`os`), `web_activity`, `push`. There is no `version` field (removed as dead code). `client.user_agent` is the single global UA source; empty falls back to the default template (see `tools.resolve_user_agent`).
 - `src/hoyo_assistant/runner/single_account.py`: one-account orchestration + optional push.
 - `src/hoyo_assistant/runner/multi_account.py`: config target discovery, per-account loop, summary aggregation.
 - `src/hoyo_assistant/core/request.py`: shared async HTTP client (retry + GET cache). Exports a global `http` client instance used across modules; supports TTL caching (GET), MockResponse for cache hits, and tenacity-based retries.

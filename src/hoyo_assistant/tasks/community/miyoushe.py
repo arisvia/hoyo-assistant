@@ -39,9 +39,9 @@ class Mihoyobbs:
             "x-rpc-app_version": MIHOYOBBS_VERSION,
             "x-rpc-sys_version": "12",
             "x-rpc-channel": "miyousheluodi",
-            "x-rpc-device_id": config["device"]["id"],
-            "x-rpc-device_name": config["device"]["name"],
-            "x-rpc-device_model": config["device"]["model"],
+            "x-rpc-device_id": config["client"]["device"]["id"],
+            "x-rpc-device_name": config["client"]["device"]["name"],
+            "x-rpc-device_model": config["client"]["device"]["model"],
             "x-rpc-h265_supported": "1",
             "Referer": "https://app.mihoyo.com",
             "x-rpc-verify_key": MIHOYOBBS_VERIFY_KEY,
@@ -55,16 +55,15 @@ class Mihoyobbs:
         self.task_header = {
             "Accept": "application/json, text/plain, */*",
             "Origin": "https://webstatic.mihoyo.com",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 12; Unspecified Device) AppleWebKit/537.36 (KHTML, like Gecko) "
-            f"Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 miHoYoBBS/{MIHOYOBBS_VERSION}",
+            "User-Agent": tools.resolve_user_agent(config["client"]["user_agent"]),
             "Referer": "https://webstatic.mihoyo.com",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": "zh-CN,en-US;q=0.8",
             "X-Requested-With": "com.mihoyo.hyperion",
             "Cookie": config.get("account", {}).get("cookie", ""),
         }
-        if config["device"]["fp"] != "":
-            self.headers["x-rpc-device_fp"] = config["device"]["fp"]
+        if config["client"]["device"]["fp"] != "":
+            self.headers["x-rpc-device_fp"] = config["client"]["device"]["fp"]
         self.task_do = {
             "sign": False,
         }

@@ -13,11 +13,14 @@ def mock_config():
             "stuid": "",
             "mid": "",
         },
-        "device": {
-            "name": "TestDevice",
-            "model": "TestModel",
-            "id": "test-device-id",
-            "fp": "",
+        "client": {
+            "user_agent": "TestUA",
+            "device": {
+                "name": "TestDevice",
+                "model": "TestModel",
+                "id": "test-device-id",
+                "fp": "",
+            },
         },
         "mihoyobbs": {
             "checkin": False,
@@ -25,14 +28,13 @@ def mock_config():
         },
         "games": {
             "cn": {
+                "retries": 1,
                 "genshin": {"checkin": False, "black_list": []},
                 "honkai2": {"checkin": False, "black_list": []},
                 "honkai3rd": {"checkin": False, "black_list": []},
                 "tears_of_themis": {"checkin": False, "black_list": []},
                 "honkai_sr": {"checkin": False, "black_list": []},
                 "zzz": {"checkin": False, "black_list": []},
-                "useragent": "TestUA",
-                "retries": 1,
             },
             "os": {
                 "cookie": "",
@@ -47,20 +49,13 @@ def mock_config():
         },
         "cloud_games": {
             "cn": {
-                "genshin": {"enable": False, "token": ""},
-                "honkai2": {"enable": False, "token": ""},
-                "honkai3rd": {"enable": False, "token": ""},
-                "tears_of_themis": {"enable": False, "token": ""},
-                "honkai_sr": {"enable": False, "token": ""},
-                "zzz": {"enable": False, "token": ""},
+                "genshin": {"token": ""},
+                "zzz": {"token": ""},
             },
             "os": {
-                "genshin": {"enable": False, "token": ""},
-                "honkai2": {"enable": False, "token": ""},
-                "honkai3rd": {"enable": False, "token": ""},
-                "tears_of_themis": {"enable": False, "token": ""},
-                "honkai_sr": {"enable": False, "token": ""},
-                "zzz": {"enable": False, "token": ""},
+                "lang": "en-us",
+                "genshin": {"token": ""},
+                "zzz": {"token": ""},
             },
         },
         "push": {

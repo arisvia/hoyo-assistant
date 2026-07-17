@@ -160,6 +160,20 @@ def get_useragent(useragent: str) -> str:
     return f"{useragent} miHoYoBBS/{MIHOYOBBS_VERSION}"
 
 
+def resolve_user_agent(custom: str = "") -> str:
+    """Resolve the effective User-Agent for browser-style endpoints.
+
+    Single source of truth for CN signin / OS signin / community headers.
+    Empty/unset ``custom`` falls back to the default UA template (which already
+    carries the ``miHoYoBBS/{version}`` suffix). A non-empty custom UA gets the
+    suffix appended (deduped) so every endpoint speaks the same protocol.
+
+    :param custom: user-provided UA from ``config["client"]["user_agent"]``.
+    :return: a UA string containing exactly one ``miHoYoBBS/{version}`` token.
+    """
+    return get_useragent(custom or "")
+
+
 def get_openssl_version() -> int:
     """
     获取openssl版本号

@@ -76,6 +76,18 @@ class DeviceConfig(BaseConfigModel):
     fp: str = ""
 
 
+class ClientConfig(BaseConfigModel):
+    """Client identity: user agent + device fingerprint.
+
+    user_agent is global (used by CN signin, OS signin, community). Empty value
+    falls back to the default UA template (with miHoYoBBS/{version} suffix) at
+    resolve time — see tools.resolve_user_agent.
+    """
+
+    user_agent: str = ""
+    device: DeviceConfig = Field(default_factory=DeviceConfig)
+
+
 class MihoyoBBSConfig(BaseConfigModel):
     checkin: bool = True
     checkin_list: list[int] = Field(
@@ -100,10 +112,6 @@ class BaseGamesConfig(BaseConfigModel):
 
 
 class GamesCNConfig(BaseGamesConfig):
-    useragent: str = (
-        "Mozilla/5.0 (Linux; Android 12; Unspecified Device) AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36"
-    )
     retries: int = 3
 
 
@@ -145,9 +153,8 @@ class WebActivityConfig(BaseConfigModel):
 
 class HoyoSettings(BaseSettings):
     enable: bool = True
-    version: int = 15
     account: AccountConfig = Field(default_factory=lambda: AccountConfig())
-    device: DeviceConfig = Field(default_factory=DeviceConfig)
+    client: ClientConfig = Field(default_factory=ClientConfig)
     mihoyobbs: MihoyoBBSConfig = Field(default_factory=MihoyoBBSConfig)
     games: GamesConfig = Field(default_factory=GamesConfig)
     cloud_games: CloudGamesConfig = Field(default_factory=CloudGamesConfig)

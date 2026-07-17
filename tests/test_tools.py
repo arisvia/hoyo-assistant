@@ -9,6 +9,7 @@ from hoyo_assistant.core.tools import (
     get_useragent,
     md5,
     random_text,
+    resolve_user_agent,
     tidy_cookie,
     time_conversion,
     timestamp,
@@ -167,4 +168,21 @@ class TestGetUseragent:
     def test_get_useragent_already_has_mihoyo(self):
         ua = get_useragent("miHoYoBBS/2.0")
         # Should not duplicate
+        assert ua.count("miHoYoBBS") == 1
+
+
+class TestResolveUserAgent:
+    def test_resolve_empty_falls_back_to_default(self):
+        ua = resolve_user_agent("")
+        # default template carries the miHoYoBBS/{version} suffix
+        assert "miHoYoBBS" in ua
+
+    def test_resolve_none_falls_back_to_default(self):
+        ua = resolve_user_agent()
+        assert "miHoYoBBS" in ua
+
+    def test_resolve_custom_appends_suffix(self):
+        ua = resolve_user_agent("MyUA")
+        assert ua.startswith("MyUA")
+        assert "miHoYoBBS" in ua
         assert ua.count("miHoYoBBS") == 1

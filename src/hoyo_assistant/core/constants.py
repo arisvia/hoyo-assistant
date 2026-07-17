@@ -88,6 +88,27 @@ GAME_INFO_ID_TO_CONFIG: Final[dict[str, str]] = {
     "abc_cn": "hna",
 }
 
+# Game config keys for explicit iteration (replaces fragile key-blacklist
+# filtering in single_account.py). Kept in sync with BaseGamesConfig fields.
+CN_GAME_KEYS: Final[tuple[str, ...]] = (
+    "honkai2",
+    "honkai3rd",
+    "tears_of_themis",
+    "genshin",
+    "honkai_sr",
+    "zzz",
+)
+OS_GAME_KEYS: Final[tuple[str, ...]] = (
+    "honkai2",
+    "honkai3rd",
+    "tears_of_themis",
+    "genshin",
+    "honkai_sr",
+    "zzz",
+)
+CN_CLOUD_GAME_KEYS: Final[tuple[str, ...]] = ("genshin", "zzz")
+OS_CLOUD_GAME_KEYS: Final[tuple[str, ...]] = ("genshin", "zzz")
+
 # Values for Headers Template (used below)
 _UA_TEMPLATE = (
     "Mozilla/5.0 (Linux; Android 12; Unspecified Device) AppleWebKit/537.36 (KHTML, like Gecko) "

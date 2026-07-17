@@ -16,6 +16,12 @@ from ..core import (
     t,
     tools,
 )
+from ..core.constants import (
+    CN_CLOUD_GAME_KEYS,
+    CN_GAME_KEYS,
+    OS_CLOUD_GAME_KEYS,
+    OS_GAME_KEYS,
+)
 from ..tasks import chinese, community, overseas, web
 
 
@@ -96,9 +102,7 @@ async def run_cn_signin_tasks() -> str:
     # Check if any CN game has checkin=True
     cn_games_config = config.get("games", {}).get("cn", {})
     cn_signin_enabled = any(
-        isinstance(val, dict) and val.get("checkin")
-        for key, val in cn_games_config.items()
-        if key not in ("useragent", "retries")
+        cn_games_config.get(key, {}).get("checkin") for key in CN_GAME_KEYS
     )
     if cn_signin_enabled:
         result.append(await chinese.run_signin_task())
@@ -106,8 +110,7 @@ async def run_cn_signin_tasks() -> str:
     # Check if any CN cloud game has token configured
     cn_cloud_config = config.get("cloud_games", {}).get("cn", {})
     cn_cloud_enabled = any(
-        isinstance(val, dict) and val.get("token")
-        for key, val in cn_cloud_config.items()
+        cn_cloud_config.get(key, {}).get("token") for key in CN_CLOUD_GAME_KEYS
     )
     if cn_cloud_enabled:
         result.append(await chinese.run_cloud_task())
@@ -120,9 +123,7 @@ async def run_os_signin_tasks() -> str:
     os_games_config = config.get("games", {}).get("os", {})
     os_cookie = os_games_config.get("cookie", "")
     os_signin_enabled = os_cookie and any(
-        isinstance(val, dict) and val.get("checkin")
-        for key, val in os_games_config.items()
-        if key not in ("cookie", "lang")
+        os_games_config.get(key, {}).get("checkin") for key in OS_GAME_KEYS
     )
     if os_signin_enabled:
         os_result = await overseas.run_signin_task()
@@ -132,9 +133,7 @@ async def run_os_signin_tasks() -> str:
     # Check if any OS cloud game has token configured
     os_cloud_config = config.get("cloud_games", {}).get("os", {})
     os_cloud_enabled = any(
-        isinstance(val, dict) and val.get("token")
-        for key, val in os_cloud_config.items()
-        if key != "lang"
+        os_cloud_config.get(key, {}).get("token") for key in OS_CLOUD_GAME_KEYS
     )
     if os_cloud_enabled:
         result.append(await overseas.run_cloud_task())

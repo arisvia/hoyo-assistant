@@ -104,3 +104,6 @@ minversion = "7.0"
 addopts = "-ra -q --cov=hoyo_assistant --cov-report=term-missing"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
+]

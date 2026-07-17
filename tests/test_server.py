@@ -78,7 +78,9 @@ class TestExecuteTask:
             patch(
                 "hoyo_assistant.server.push.push", new_callable=AsyncMock
             ) as mock_push,
-            patch("hoyo_assistant.server.config", {"push": False}),
+            patch(
+                "hoyo_assistant.server.is_push_enabled", return_value=False
+            ) as mock_push_enabled,
             patch("hoyo_assistant.server.log") as mock_log,
             patch("hoyo_assistant.server.t", side_effect=lambda k, **kw: k),
         ):
@@ -86,6 +88,7 @@ class TestExecuteTask:
                 "single": mock_single,
                 "multi": mock_multi,
                 "push": mock_push,
+                "push_enabled": mock_push_enabled,
                 "log": mock_log,
             }
 
@@ -151,29 +154,34 @@ class TestExecuteTask:
         _patches["multi"].return_value = (0, "ok")
         cfg = ServerSettings(_mode="multi")
 
-        with patch("hoyo_assistant.server.config", {"push": "true"}):
+        with patch("hoyo_assistant.server.is_push_enabled", return_value=True):
             await execute_task(cfg)
 
         _patches["push"].assert_awaited_once_with(0, "ok")
 
     async def test_push_enabled_via_env(self, _patches):
+        """Env var HOYO_ASSISTANT_PUSH__ENABLE overrides a disabled config.
+
+        execute_task delegates the push decision entirely to is_push_enabled(), so the
+        env-override semantics live there. Verify them directly against the real
+        function: with config push disabled, the env var still flips it to enabled.
+        """
         _patches["multi"].return_value = (0, "ok")
-        cfg = ServerSettings(_mode="multi")
+
+        from hoyo_assistant.core import is_push_enabled
 
         with (
-            patch("hoyo_assistant.server.config", {"push": False}),
+            patch("hoyo_assistant.core.config", {"push": {"enable": False}}),
             patch.dict("os.environ", {"HOYO_ASSISTANT_PUSH__ENABLE": "true"}),
         ):
-            await execute_task(cfg)
-
-        _patches["push"].assert_awaited_once_with(0, "ok")
+            assert is_push_enabled() is True
 
     async def test_push_exception_logged(self, _patches):
         _patches["multi"].return_value = (0, "ok")
         _patches["push"].side_effect = RuntimeError("push failed")
         cfg = ServerSettings(_mode="multi")
 
-        with patch("hoyo_assistant.server.config", {"push": "yes"}):
+        with patch("hoyo_assistant.server.is_push_enabled", return_value=True):
             # Should not raise
             await execute_task(cfg)
 

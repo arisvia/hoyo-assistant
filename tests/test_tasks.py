@@ -249,7 +249,10 @@ class TestGameCheckin:
             checkin = GameCheckin("hk4e_cn", "genshin", "Genshin", "act_id", "Traveler")
             checkin.set_headers()
             assert checkin.headers["Cookie"] == mock_config["account"]["cookie"]
-            assert checkin.headers["User-Agent"] == "TestUA"
+            # UA comes from resolve_user_agent(client.user_agent): custom value
+            # "TestUA" gets the miHoYoBBS/{version} suffix appended.
+            assert checkin.headers["User-Agent"].startswith("TestUA")
+            assert "miHoYoBBS" in checkin.headers["User-Agent"]
             assert "Referer" in checkin.headers
 
     @pytest.mark.asyncio
@@ -784,7 +787,7 @@ class TestMihoyobbs:
         assert "cookie" in bbs.headers
 
     def test_init_with_fp(self, mock_config):
-        mock_config["device"]["fp"] = "test_fp"
+        mock_config["client"]["device"]["fp"] = "test_fp"
         bbs = self._make_bbs(mock_config)
         assert bbs.headers.get("x-rpc-device_fp") == "test_fp"
 
