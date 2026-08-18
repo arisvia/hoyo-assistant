@@ -5,7 +5,7 @@ import hmac
 import inspect
 import re
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from urllib.parse import quote_plus
 
@@ -431,8 +431,6 @@ class PushHandler:
         log.info(t("push.result", result=rep["reason"]))
 
     async def discord(self, status_id: int, push_message: str | None) -> None:
-        import pytz
-
         title, body, _ = self._build_push_payload(status_id, push_message)
 
         def get_color() -> int:
@@ -462,9 +460,9 @@ class PushHandler:
                             "icon_url": "https://github.com/DGP-Studio/Snap.Hutao.Docs/blob/main/docs/.vuepress/public"
                             "/images/202308/hoyolab-miyoushe-Icon.png?raw=true ",
                         },
-                        "timestamp": datetime.now(UTC)
-                        .astimezone(pytz.timezone("Asia/Shanghai"))
-                        .isoformat(),
+                        "timestamp": datetime.now(
+                            timezone(timedelta(hours=8))
+                        ).isoformat(),
                     }
                 ],
                 "username": "MihoyoBBSTools",

@@ -19,7 +19,10 @@ from hoyo_assistant.tasks.chinese.game_signin import (
     run_task as cn_run_task,
 )
 from hoyo_assistant.tasks.community.miyoushe import Mihoyobbs
-from hoyo_assistant.tasks.overseas import cloud_games as os_cloud_games
+from hoyo_assistant.tasks.overseas import (
+    cloud_games as os_cloud_games,
+    game_signin as os_game_signin,
+)
 from hoyo_assistant.tasks.web import activities
 
 # ---------------------------------------------------------------------------
@@ -1271,3 +1274,204 @@ class TestOSCloudGames:
         ):
             result = await os_cloud_games.run_task()
         assert "result" in result
+
+
+# ---------------------------------------------------------------------------
+# OS GameSignin tests (tasks/overseas/game_signin.py)
+# ---------------------------------------------------------------------------
+
+
+class TestOSGameSignin:
+    @pytest.fixture
+    def os_config(self):
+        return {
+            "games": {
+                "os": {
+                    "cookie": "ltoken=xyz; ltuid=123",
+                    "lang": "en-us",
+                    "genshin": {"checkin": True},
+                    "honkai_sr": {"checkin": False},
+                    "honkai3rd": {"checkin": False},
+                    "tears_of_themis": {"checkin": False},
+                    "zzz": {"checkin": False},
+                }
+            }
+        }
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_already_signed(self, os_config):
+        info_resp = make_response({"data": {"is_sign": True, "first_bind": False}})
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                AsyncMock(return_value=info_resp),
+            ),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                "https://act.hoyolab.com", "act_123", "Genshin"
+            )
+        assert "Genshin" in res
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_first_bind(self, os_config):
+        info_resp = make_response({"data": {"is_sign": False, "first_bind": True}})
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                AsyncMock(return_value=info_resp),
+            ),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                "https://act.hoyolab.com", "act_123", "Genshin"
+            )
+        assert "Genshin" in res
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_success(self, os_config):
+        info_resp = make_response(
+            {
+                "data": {
+                    "is_sign": False,
+                    "first_bind": False,
+                    "total_sign_day": 1,
+                    "today": "2026-08-18",
+                }
+            }
+        )
+        award_resp = make_response(
+            {"data": {"awards": [{"name": "Primogems", "cnt": 60}]}}
+        )
+        sign_resp = make_response({"retcode": 0, "data": {"code": "ok"}})
+
+        async def fake_get(url, **kwargs):
+            if "/info" in url:
+                return info_resp
+            return award_resp
+
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                side_effect=fake_get,
+            ),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.post",
+                AsyncMock(return_value=sign_resp),
+            ),
+            patch("asyncio.sleep", AsyncMock()),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                "https://act.hoyolab.com", "act_123", "Genshin"
+            )
+        assert "Genshin" in res
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_retcode_already_signed(self, os_config):
+        info_resp = make_response(
+            {
+                "data": {
+                    "is_sign": False,
+                    "first_bind": False,
+                    "total_sign_day": 1,
+                    "today": "2026-08-18",
+                }
+            }
+        )
+        award_resp = make_response(
+            {"data": {"awards": [{"name": "Primogems", "cnt": 60}]}}
+        )
+        sign_resp = make_response({"retcode": -5003, "message": "already signed"})
+
+        async def fake_get(url, **kwargs):
+            if "/info" in url:
+                return info_resp
+            return award_resp
+
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                side_effect=fake_get,
+            ),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.post",
+                AsyncMock(return_value=sign_resp),
+            ),
+            patch("asyncio.sleep", AsyncMock()),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                "https://act.hoyolab.com", "act_123", "Genshin"
+            )
+        assert "Genshin" in res
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_error(self, os_config):
+        info_resp = make_response(
+            {
+                "data": {
+                    "is_sign": False,
+                    "first_bind": False,
+                    "total_sign_day": 1,
+                    "today": "2026-08-18",
+                }
+            }
+        )
+        award_resp = make_response(
+            {"data": {"awards": [{"name": "Primogems", "cnt": 60}]}}
+        )
+        sign_resp = make_response({"retcode": 10001, "message": "token error"})
+
+        async def fake_get(url, **kwargs):
+            if "/info" in url:
+                return info_resp
+            return award_resp
+
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                side_effect=fake_get,
+            ),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.post",
+                AsyncMock(return_value=sign_resp),
+            ),
+            patch("asyncio.sleep", AsyncMock()),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                "https://act.hoyolab.com", "act_123", "Genshin"
+            )
+        assert "token error" in res
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_zzz_header(self, os_config):
+        info_resp = make_response({"data": {"is_sign": True, "first_bind": False}})
+        mock_get = AsyncMock(return_value=info_resp)
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch("hoyo_assistant.tasks.overseas.game_signin.http.get", mock_get),
+        ):
+            await os_game_signin.hoyo_checkin(
+                "https://act.hoyolab.com", os_game_signin.ACT_ID_OS_ZZZ, "ZZZ"
+            )
+        headers = mock_get.call_args.kwargs["headers"]
+        assert headers.get("x-rpc-signgame") == "zzz"
+
+    @pytest.mark.asyncio
+    async def test_run_task(self, os_config):
+        os_config["games"]["os"]["genshin"]["checkin"] = True
+        os_config["games"]["os"]["honkai_sr"]["checkin"] = True
+        os_config["games"]["os"]["honkai3rd"]["checkin"] = True
+        os_config["games"]["os"]["tears_of_themis"]["checkin"] = True
+        os_config["games"]["os"]["zzz"]["checkin"] = True
+
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch.object(
+                os_game_signin, "hoyo_checkin", AsyncMock(return_value="checked")
+            ),
+        ):
+            res = await os_game_signin.run_task()
+        assert "checked" in res
