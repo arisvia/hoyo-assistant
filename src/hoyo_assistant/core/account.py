@@ -1,15 +1,17 @@
 from typing import Any
 
 from . import CookieError, config, http, log, login, t
-from .constants import API_ACCOUNT_INFO, GAME_INFO_ID_TO_CONFIG, GAME_INFO_ID_TO_NAME
+from .constants import (
+    API_ACCOUNT_INFO,
+    GAME_INFO_ID_TO_CONFIG,
+    GAME_INFO_ID_TO_NAME,
+    RetCode,
+)
 
 
-# Helper
 def get_game_name(game_id: str) -> str:
     config_name = GAME_INFO_ID_TO_CONFIG.get(game_id)
     if config_name:
-        if config_name == "honkaisr":
-            config_name = "honkai_sr"
         return t(
             f"games.names.{config_name}",
             default=GAME_INFO_ID_TO_NAME.get(game_id, game_id),
@@ -32,7 +34,7 @@ async def get_account_list(
     game_name = get_game_name(game_id)
 
     if update and await login.update_cookie_token():
-        headers["Cookie"] = config["account"]["cookie"]
+        headers["Cookie"] = config["cn"]["cookie"]
     elif update:
         log.warning(t("account.list_fail", name=game_name))
         raise CookieError(t("account.cookie_invalid"))
@@ -42,10 +44,10 @@ async def get_account_list(
         API_ACCOUNT_INFO, params={"game_biz": game_id}, headers=headers, use_cache=False
     )
     data = await response.json()
-    if data["retcode"] == -100:
+    if data["retcode"] == RetCode.UNAUTHORIZED:
         return await get_account_list(game_id, headers, update=True)
 
-    if data["retcode"] != 0:
+    if data["retcode"] != RetCode.OK:
         log.warning(t("account.list_fail", name=game_name))
         return []
 

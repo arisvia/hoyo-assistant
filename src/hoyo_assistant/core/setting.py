@@ -6,9 +6,9 @@ from typing import Any
 import yaml
 
 from . import log, t
-from .setting_schema import HoyoSettings
+from .setting_schema import HoyoConfig, HoyoSettings
 
-config: dict[str, Any] = HoyoSettings().model_dump()
+config: dict[str, Any] = HoyoConfig().model_dump()
 config_raw: dict[str, Any] = deepcopy(config)
 runtime_overrides: dict[str, Any] = {}
 
@@ -25,6 +25,8 @@ _SENSITIVE_KEYS = {
     "bot_token",
     "api_key",
     "authorization",
+    "webhook",
+    "key",
 }
 
 
@@ -52,7 +54,13 @@ def _walk(node: Any, parent_key: str = "") -> Any:
         result = {}
         for key, value in node.items():
             lower_key = str(key).lower()
-            if lower_key in _SENSITIVE_KEYS or lower_key.endswith("_token"):
+            is_cloud_token = parent_key == "cloud" and isinstance(value, str)
+            if (
+                is_cloud_token
+                or lower_key in _SENSITIVE_KEYS
+                or lower_key.endswith("_token")
+                or lower_key.endswith("_key")
+            ):
                 result[key] = _mask_secret(value)
             else:
                 result[key] = _walk(value, lower_key)
@@ -87,11 +95,9 @@ def load_config(
     target_file = config_file or config_path
 
     if not target_file:
-        # Search default locations
         target_file = _find_default_config_file()
 
     # 2. Load from file if found
-    # 明确文件数据的类型以满足 mypy
     file_data: dict[str, Any] = {}
     if target_file and os.path.exists(target_file):
         try:
@@ -99,7 +105,6 @@ def load_config(
             with open(target_file, encoding="utf-8") as f:
                 file_data = yaml.safe_load(f) or {}
 
-            # Update global paths
             config_path = target_file
             path = os.path.dirname(target_file)
         except Exception as e:
@@ -112,15 +117,14 @@ def load_config(
             log.debug(t("config.not_found_generic"))
 
     try:
+        settings: HoyoConfig
         if use_env:
             settings = HoyoSettings(**file_data)
         else:
-            # BaseModel validation path skips BaseSettings env source resolution.
-            settings = HoyoSettings.model_validate(file_data)
+            settings = HoyoConfig.model_validate(file_data)
         new_config = settings.model_dump()
 
         if runtime_overrides:
-            # Apply CLI/runtime overrides last so they remain above env and file values.
             new_config = _deep_merge_dict(new_config, runtime_overrides)
 
         config.clear()
@@ -152,7 +156,6 @@ async def save_config() -> None:
         return
 
     try:
-        # Use a thread executor for file I/O
         import asyncio
 
         loop = asyncio.get_running_loop()
@@ -165,8 +168,16 @@ async def save_config() -> None:
 def _strip_none_push_values(data: dict[str, Any]) -> dict[str, Any]:
     """Remove None-valued push channels from config dict to keep YAML clean."""
     result = deepcopy(data)
-    if isinstance(result.get("push"), dict):
-        result["push"] = {k: v for k, v in result["push"].items() if v is not None}
+    push = result.get("push")
+    if isinstance(push, dict):
+        channels = push.get("channels")
+        if isinstance(channels, dict):
+            cleaned_channels = {k: v for k, v in channels.items() if v is not None}
+            if cleaned_channels:
+                push["channels"] = cleaned_channels
+            else:
+                push.pop("channels", None)
+        result["push"] = {k: v for k, v in push.items() if v is not None}
     return result
 
 
@@ -186,9 +197,7 @@ def save_config_sync(
         return
 
     try:
-        # Re-validate through Pydantic to get a proper model, then dump
-        # with exclude_defaults to keep output minimal (same as format command).
-        settings = HoyoSettings.model_validate(content)
+        settings = HoyoConfig.model_validate(content)
         save_data = settings.model_dump(exclude_defaults=True)
         save_data = _strip_none_push_values(save_data)
 
@@ -205,16 +214,16 @@ def save_config_sync(
 
 
 async def clear_cookie() -> None:
-    """Clear cookie in config and save."""
-    if "account" in config:
-        config["account"]["cookie"] = ""
+    """Clear CN cookie in config and save."""
+    if "cn" in config:
+        config["cn"]["cookie"] = ""
         await save_config()
 
 
 async def clear_stoken() -> None:
-    """Clear stoken in config and save."""
-    if "account" in config:
-        config["account"]["stoken"] = ""
+    """Clear CN stoken in config and save."""
+    if "cn" in config:
+        config["cn"]["stoken"] = ""
         await save_config()
 
 
@@ -228,18 +237,18 @@ def _find_default_config_file() -> str | None:
     project_root = Path(__file__).resolve().parents[3]
     candidates.append(str(project_root / "config" / "config.yaml"))
 
-    for path in candidates:
-        if os.path.exists(path):
-            return path
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
 
     return None
 
 
-DEFAULT_CONFIG = HoyoSettings().model_dump()
+DEFAULT_CONFIG = HoyoConfig().model_dump()
 
 
 def validate_config_file(filepath: str) -> tuple[bool, list[str]]:
-    """Validate a config file against the schema."""
+    """Validate a config file strictly against the v2 schema (isolated from shell env)."""
     if not os.path.exists(filepath):
         return False, ["File not found"]
 
@@ -247,44 +256,33 @@ def validate_config_file(filepath: str) -> tuple[bool, list[str]]:
         with open(filepath, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
-        HoyoSettings(**data)
+        HoyoConfig.model_validate(data)
         return True, []
     except Exception as e:
         return False, [str(e)]
 
 
 def auto_fill_config_file(filepath: str, backup: bool = True) -> tuple[bool, str]:
-    """
-    Auto-fill missing fields in a local config file with default values.
-
-    Args:
-        filepath: Path to the config file to auto-fill.
-        backup: Whether to create a backup of the original file.
-
-    Returns:
-        (success: bool, message: str) - Whether auto-fill succeeded and a status message.
-    """
+    """Validate and format a local config file (without leaking shell env secrets)."""
     if not os.path.exists(filepath):
         return False, t("config.file_not_found", path=filepath)
 
-    # Check if it's a local file (not a system path)
     if not os.path.isfile(filepath):
         return False, t("config.path_not_file", path=filepath)
 
     try:
-        # Read original file
         with open(filepath, encoding="utf-8") as f:
             original_data = yaml.safe_load(f) or {}
 
-        # Create settings object (this validates and fills defaults)
-        settings = HoyoSettings(**original_data)
-        filled_data = settings.model_dump(exclude_defaults=True)
+        # Use HoyoConfig so shell environment variables are never persisted to disk
+        settings = HoyoConfig.model_validate(original_data)
+        filled_data = _strip_none_push_values(
+            settings.model_dump(exclude_defaults=True)
+        )
 
-        # Check if anything was filled
         if original_data == filled_data:
             return True, t("config.already_complete", path=filepath)
 
-        # Create backup if requested
         if backup:
             backup_path = f"{filepath}.bak"
             with open(backup_path, "w", encoding="utf-8") as f:
@@ -297,11 +295,9 @@ def auto_fill_config_file(filepath: str, backup: bool = True) -> tuple[bool, str
                 )
             log.info(t("config.backup_created", path=backup_path))
 
-        # Write filled config back to file
-        clean_data = _strip_none_push_values(filled_data)
         with open(filepath, "w", encoding="utf-8") as f:
             yaml.dump(
-                clean_data,
+                filled_data,
                 f,
                 default_flow_style=False,
                 allow_unicode=True,

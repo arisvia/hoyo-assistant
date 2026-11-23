@@ -11,6 +11,7 @@ from ..core import (
     setting,
     t,
 )
+from ..core.constants import DELAY_ACCOUNT_RANGE
 from .single_account import run_single_account
 
 
@@ -33,8 +34,8 @@ def _collect_config_pool(paths: Iterable[str]) -> list[tuple[str, str]]:
                 seen.add(abs_path)
                 pool.append((os.path.dirname(abs_path), os.path.basename(abs_path)))
         elif os.path.isdir(single_path):
-            for f in os.listdir(single_path):
-                if f.endswith((".yaml", ".yml")):
+            for f in sorted(os.listdir(single_path)):
+                if f.endswith((".yaml", ".yml")) and not f.endswith("template.yaml"):
                     abs_path = os.path.abspath(os.path.join(single_path, f))
                     if abs_path not in seen:
                         seen.add(abs_path)
@@ -66,7 +67,7 @@ async def run_multi_account(
             else os.path.join(os.getcwd(), "config")
         )
         if os.path.exists(search_path):
-            for f in os.listdir(search_path):
+            for f in sorted(os.listdir(search_path)):
                 if f.endswith((".yaml", ".yml")) and not f.endswith("template.yaml"):
                     config_pool.append((search_path, f))
 
@@ -104,7 +105,7 @@ async def run_multi_account(
                 results["close"].append(file_name)
 
         log.info(t("multi.exec_done", file=file_name))
-        await asyncio.sleep(random.randint(3, 10))
+        await asyncio.sleep(random.randint(*DELAY_ACCOUNT_RANGE))
 
     push_message = t(
         "multi.summary",

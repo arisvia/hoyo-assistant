@@ -12,6 +12,7 @@ from rich.panel import Panel
 
 from . import server
 from .core import loghelper, setting, t
+from .core.constants import EnvVar
 from .core.models import ServerSettings
 from .runner import multi_account, single_account
 
@@ -39,7 +40,7 @@ def _is_interactive_terminal() -> bool:
 
 
 def _use_rich_output() -> bool:
-    mode = os.getenv("HOYO_ASSISTANT_CLI_OUTPUT", "auto").strip().lower()
+    mode = os.getenv(EnvVar.CLI_OUTPUT, "auto").strip().lower()
     if mode in {"plain", "text", "simple", "0", "false", "off"}:
         return False
     if mode in {"rich", "pretty", "1", "true", "on"}:
@@ -223,19 +224,22 @@ def generate_template(output_path: str | None) -> None:
     if output_path:
         output_path = str(os.path.expanduser(output_path))
 
-    # Save the default config
     try:
         clean_config = setting._strip_none_push_values(setting.DEFAULT_CONFIG)
+        rendered = yaml.dump(
+            clean_config,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        )
         if output_path:
-            setting.save_config_sync(output_path, clean_config)
+            parent_dir = os.path.dirname(output_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(rendered)
             cli_print(t("cli.task.template_saved", path=output_path), style="green")
         else:
-            rendered = yaml.dump(
-                clean_config,
-                default_flow_style=False,
-                allow_unicode=True,
-                sort_keys=False,
-            )
             sys.stdout.write(rendered)
             if not rendered.endswith("\n"):
                 sys.stdout.write("\n")
@@ -264,9 +268,8 @@ def fill_config_command(config_path: str, create_backup: bool = True) -> None:
         sys.exit(1)
 
 
-def main() -> None:
-    print_banner()
-
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description=t("cli.parser.description"),
         formatter_class=argparse.RawTextHelpFormatter,
@@ -324,7 +327,13 @@ def main() -> None:
     fill_config_parser.add_argument(
         "--no-backup", action="store_true", help=t("cli.parser.format_no_backup")
     )
+    return parser
 
+
+def main() -> None:
+    print_banner()
+
+    parser = build_parser()
     args = parser.parse_args()
 
     is_server_command = args.command == "server"
@@ -361,7 +370,7 @@ def main() -> None:
     else:
         # Apply log-level, log-dir, no-log from CLI args
         log_level = getattr(args, "log_level", None) or os.environ.get(
-            "HOYO_ASSISTANT_LOG_LEVEL", "INFO"
+            EnvVar.LOG_LEVEL, "INFO"
         )
         log_dir = getattr(args, "log_dir", None)
         if log_dir:
