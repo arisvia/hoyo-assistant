@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ...core import http, log, t, tools
+from ...core.constants import DELAY_CLOUD_RETRY_RANGE, RetCode
 
 
 class BaseCloudGame:
@@ -35,7 +36,7 @@ class BaseCloudGame:
         ret_msg = ""
 
         try:
-            res = await http.get(url=self.url, headers=self.headers)
+            res = await http.get(url=self.url, headers=self.headers, use_cache=False)
             if res.status in (400, 401, 403):
                 ret_msg += t("games.cloud.token_invalid", game=self.game)
                 log.warning(ret_msg)
@@ -44,10 +45,11 @@ class BaseCloudGame:
 
             data = await res.json()
 
-            if data["retcode"] == 0:
+            if data["retcode"] == RetCode.OK:
                 free_time = data["data"]["free_time"]
                 free_seconds = int(free_time["free_time"])
                 send_free_time = int(free_time["send_freetime"])
+                status_data = data["data"]
 
                 if send_free_time > 0:
                     ret_msg += t(
@@ -55,37 +57,46 @@ class BaseCloudGame:
                     )
                 else:
                     if retry_on_limit and free_seconds < 600:
-                        # CN-specific retry logic
-                        await asyncio.sleep(random.randint(3, 6))
-                        _res = await http.get(url=self.url, headers=self.headers)
+                        await asyncio.sleep(random.randint(*DELAY_CLOUD_RETRY_RANGE))
+                        _res = await http.get(
+                            url=self.url, headers=self.headers, use_cache=False
+                        )
                         _data = await _res.json()
-                        _free_time = _data["data"]["free_time"]
-                        get_free_time = int(_free_time["free_time"]) - free_seconds
-                        if get_free_time > 0:
-                            ret_msg += t(
-                                "games.cloud.success",
-                                game=self.game,
-                                time=get_free_time,
-                            )
+                        if _data.get("retcode") == RetCode.OK and isinstance(
+                            _data.get("data"), dict
+                        ):
+                            _free_time = _data["data"]["free_time"]
+                            new_free_seconds = int(_free_time["free_time"])
+                            get_free_time = new_free_seconds - free_seconds
+                            if get_free_time > 0:
+                                free_seconds = new_free_seconds
+                                status_data = _data["data"]
+                                ret_msg += t(
+                                    "games.cloud.success",
+                                    game=self.game,
+                                    time=get_free_time,
+                                )
+                            else:
+                                ret_msg += t("games.cloud.limit_fail", game=self.game)
                         else:
                             ret_msg += t("games.cloud.limit_fail", game=self.game)
                     else:
                         ret_msg += t("games.cloud.limit_fail", game=self.game)
                 log.info(ret_msg)
 
-                time = tools.time_conversion(free_seconds)
-                card_status = data["data"]["play_card"]["short_msg"]
-                coin_num = data["data"]["coin"]["coin_num"]
+                time_str = tools.time_conversion(free_seconds)
+                card_status = status_data["play_card"]["short_msg"]
+                coin_num = status_data["coin"]["coin_num"]
                 status_msg = t(
                     "games.cloud.status",
-                    time=time,
+                    time=time_str,
                     card_status=card_status,
                     coin_name=self.coin_name,
                     coin=coin_num,
                 )
                 log.info(status_msg)
                 ret_msg += "\t" + status_msg
-            elif data["retcode"] == -100:
+            elif data["retcode"] == RetCode.UNAUTHORIZED:
                 ret_msg += t("games.cloud.token_invalid", game=self.game)
                 log.warning(ret_msg)
                 await self.clear_cookie_func()

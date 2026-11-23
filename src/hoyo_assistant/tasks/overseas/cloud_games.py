@@ -3,7 +3,12 @@
 import functools
 
 from ...core import config, log, setting, t
-from ...core.constants import API_CLOUD_GENSHIN_SIGN_OS, API_CLOUD_ZZZ_SIGN_OS
+from ...core.constants import (
+    API_CLOUD_GENSHIN_SIGN_OS,
+    API_CLOUD_ZZZ_SIGN_OS,
+    DEFAULT_OS_LANG,
+    OS_CLOUD_APP_UA,
+)
 from ...core.models import CloudGameInfo
 from ..base import BaseCloudGame
 
@@ -14,8 +19,8 @@ CLOUD_GAMES = [
 
 
 async def clear_cookie(code: str) -> None:
-    if "cloud_games" in config and "os" in config["cloud_games"]:
-        config["cloud_games"]["os"].setdefault(code, {})["token"] = ""
+    if "os" in config and "cloud" in config["os"]:
+        config["os"]["cloud"][code] = ""
         await setting.save_config()
 
 
@@ -25,7 +30,7 @@ def _build_headers(token: str, game_biz: str, lang: str) -> dict[str, str]:
         "Accept": "*/*",
         "x-rpc-combo_token": token,
         "Accept-Encoding": "gzip, deflate",
-        "User-Agent": "okhttp/4.10.0",
+        "User-Agent": OS_CLOUD_APP_UA,
         "x-rpc-client_type": "3",
         "x-rpc-cg_game_biz": game_biz,
         "x-rpc-channel_id": "1",
@@ -34,13 +39,14 @@ def _build_headers(token: str, game_biz: str, lang: str) -> dict[str, str]:
 
 
 async def run_task() -> str:
-    conf = config["cloud_games"]["os"]
+    os_cfg = config["os"]
+    cloud_cfg = os_cfg["cloud"]
+    lang = os_cfg.get("lang", DEFAULT_OS_LANG)
     log.info(t("games.cloud.start"))
     ret_msg = ""
     for game in CLOUD_GAMES:
-        token = conf.get(game.name, {}).get("token")
+        token = cloud_cfg.get(game.name, "")
         if token:
-            lang = conf.get("lang", "zh-cn")
             headers = _build_headers(token, game.biz, lang)
             game_task = BaseCloudGame(
                 game=t(f"games.names.{game.name}"),

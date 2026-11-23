@@ -1,6 +1,7 @@
 """CN server cloud game sign-in tasks."""
 
 import functools
+from urllib.parse import urlparse
 
 from ...core import config, log, setting, t
 from ...core.constants import (
@@ -8,19 +9,31 @@ from ...core.constants import (
     API_CLOUD_GENSHIN_SIGN,
     API_CLOUD_ZZZ,
     API_CLOUD_ZZZ_SIGN,
+    DESKTOP_BROWSER_UA,
+    REFERER_MIHOYO_APP,
 )
 from ...core.models import CloudGameInfo
 from ..base import BaseCloudGame
 
 CLOUD_GAMES = [
-    CloudGameInfo("genshin", API_CLOUD_GENSHIN_SIGN, "hk4e_cn", API_CLOUD_GENSHIN),
-    CloudGameInfo("zzz", API_CLOUD_ZZZ_SIGN, "nap_cn", API_CLOUD_ZZZ),
+    CloudGameInfo(
+        "genshin",
+        API_CLOUD_GENSHIN_SIGN,
+        "hk4e_cn",
+        urlparse(API_CLOUD_GENSHIN).netloc,
+    ),
+    CloudGameInfo(
+        "zzz",
+        API_CLOUD_ZZZ_SIGN,
+        "nap_cn",
+        urlparse(API_CLOUD_ZZZ).netloc,
+    ),
 ]
 
 
 async def clear_cookie(code: str) -> None:
-    if "cloud_games" in config and "cn" in config["cloud_games"]:
-        config["cloud_games"]["cn"].setdefault(code, {})["token"] = ""
+    if "cn" in config and "cloud" in config["cn"]:
+        config["cn"]["cloud"][code] = ""
         await setting.save_config()
 
 
@@ -28,23 +41,24 @@ def _build_headers(token: str, game_biz: str, hostname: str | None) -> dict[str,
     """Build headers for CN cloud game API."""
     headers: dict[str, str] = {
         "Accept": "*/*",
-        "Referer": "https://app.mihoyo.com",
+        "Referer": REFERER_MIHOYO_APP,
         "x-rpc-combo_token": token,
         "x-rpc-cg_game_biz": game_biz,
         "Accept-Encoding": "gzip, deflate",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.84 Safari/537.36",
+        "User-Agent": DESKTOP_BROWSER_UA,
     }
     if hostname:
-        headers["Host"] = hostname
+        parsed = urlparse(hostname)
+        headers["Host"] = parsed.netloc or hostname
     return headers
 
 
 async def run_task() -> str:
-    conf = config["cloud_games"]["cn"]
+    cloud_cfg = config["cn"]["cloud"]
     log.info(t("games.cloud.start"))
     ret_msg = ""
     for game in CLOUD_GAMES:
-        token = conf.get(game.name, {}).get("token")
+        token = cloud_cfg.get(game.name, "")
         if token:
             headers = _build_headers(token, game.biz, game.hostname)
             game_task = BaseCloudGame(
