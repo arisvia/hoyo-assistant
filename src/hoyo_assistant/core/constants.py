@@ -2,12 +2,11 @@ from enum import IntEnum
 from typing import Final
 
 # =============================================================================
-# Functional Constants (System & Network)
+# Functional Constants (System, Env & Network)
 # =============================================================================
 ASYNC_TIMEOUT: Final[int] = 30
 RETRY_TIMES: Final[int] = 3
 RETRY_INTERVAL: Final[float] = 1.0
-MAX_WORKERS: Final[int] = 5
 
 # Cache
 CACHE_MAX_SIZE: Final[int] = 100
@@ -25,9 +24,34 @@ DNS_SERVERS: Final[list[str]] = [
     "1.1.1.1",  # Cloudflare
 ]
 
+# Rate-limit & anti-bot delay ranges (seconds)
+DELAY_SIGN_RANGE: Final[tuple[int, int]] = (2, 8)
+DELAY_BBS_RANGE: Final[tuple[int, int]] = (3, 8)
+DELAY_ACCOUNT_RANGE: Final[tuple[int, int]] = (3, 10)
+DELAY_CLOUD_RETRY_RANGE: Final[tuple[int, int]] = (3, 6)
+DELAY_CAPTCHA_RETRY_RANGE: Final[tuple[int, int]] = (6, 15)
+DELAY_REWARD_RETRY_SECONDS: Final[int] = 5
+DELAY_RATE_LIMIT_SECONDS: Final[int] = 10
+
+
+class EnvVar:
+    """Centralized runtime & Pydantic environment variable names."""
+
+    PREFIX: Final[str] = "HOYO_ASSISTANT_"
+    CLI_OUTPUT: Final[str] = "HOYO_ASSISTANT_CLI_OUTPUT"
+    LANGUAGE: Final[str] = "HOYO_ASSISTANT_LANGUAGE"
+    LANG_FALLBACK: Final[str] = "LANG"
+    LOG_DIR: Final[str] = "HOYO_ASSISTANT_LOG_DIR"
+    LOG_ROTATION: Final[str] = "HOYO_ASSISTANT_LOG_ROTATION"
+    LOG_RETENTION: Final[str] = "HOYO_ASSISTANT_LOG_RETENTION"
+    LOG_CONSOLE_ENABLE: Final[str] = "HOYO_ASSISTANT_LOG_CONSOLE_ENABLE"
+    LOG_FILE_ENABLE: Final[str] = "HOYO_ASSISTANT_LOG_FILE_ENABLE"
+    LOG_LEVEL: Final[str] = "HOYO_ASSISTANT_LOG_LEVEL"
+    PUSH_ENABLE: Final[str] = "HOYO_ASSISTANT_PUSH__ENABLE"
+
 
 # =============================================================================
-# Status Constants (Enum)
+# Status & API Return Code Contracts
 # =============================================================================
 class StatusCode(IntEnum):
     """Shared task status contract across run and push modules."""
@@ -38,23 +62,60 @@ class StatusCode(IntEnum):
     CAPTCHA_TRIGGERED = 3
 
 
+class RetCode(IntEnum):
+    """Common MiYoUShe / HoYoLAB API return codes."""
+
+    OK = 0
+    UNAUTHORIZED = -100
+    STOKEN_EXPIRED_V2 = -3260
+    ALREADY_SIGNED_IN = -5003
+    CAPTCHA_TRIGGERED = 1034
+
+
+# Runtime credential error sentinels
+COOKIE_ERROR_SENTINEL: Final[str] = "CookieError"
+STOKEN_ERROR_SENTINEL: Final[str] = "StokenError"
+
+
 # =============================================================================
-# Business Constants (Game & BBS Logic)
+# Business Constants (Game, Client & BBS Protocol)
 # =============================================================================
 # Salt
-MIHOYOBBS_SALT: Final[str] = "47f15f1b66bee46b816115d8e8e6ebb6"
-MIHOYOBBS_SALT_WEB: Final[str] = "d9200c846b10886e8c874fc33c8f308b"
-MIHOYOBBS_SALT_X4: Final[str] = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs"
+MIHOYOBBS_SALT: Final[str] = "9c7b896d7483e9070b27c55f1959c4d5"
+MIHOYOBBS_SALT_WEB: Final[str] = "4751cb5557bfad5e249e58462c39fb0a"
 MIHOYOBBS_SALT_X6: Final[str] = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"
+MIHOYOBBS_SALT_PASSPORT: Final[str] = "JwYDpKvLj6MrMqqYU6jTKF17KNO2PXoS"
 
-MIHOYOBBS_VERIFY_KEY: Final[str] = "bll8iq97cem8"
-MIHOYOBBS_VERSION: Final[str] = "2.109.0"
+MIHOYOBBS_APP_ID: Final[str] = "bll8iq97cem8"
+MIHOYOBBS_VERIFY_KEY: Final[str] = MIHOYOBBS_APP_ID
+MIHOYOBBS_VERSION: Final[str] = "2.117.0"
+MIHOYOBBS_PASSPORT_VERSION: Final[str] = "2.44.0"
 
-# Client Type
+# Client protocol headers & defaults
 MIHOYOBBS_CLIENT_TYPE: Final[str] = "2"  # 1: ios, 2: android
 MIHOYOBBS_CLIENT_TYPE_WEB: Final[str] = "5"  # 4: pc web, 5: mobile web
+MIHOYOBBS_CHANNEL: Final[str] = "miyousheluodi"
+MIHOYOBBS_SYS_VERSION: Final[str] = "12"
+MIHOYOBBS_X_REQUESTED_WITH: Final[str] = "com.mihoyo.hyperion"
+MIHOYOBBS_ACCEPT_LANGUAGE: Final[str] = "zh-CN,en-US;q=0.8"
+MIHOYOBBS_APP_UA: Final[str] = "okhttp/4.9.3"
+OS_CLOUD_APP_UA: Final[str] = "okhttp/4.10.0"
+DESKTOP_BROWSER_UA: Final[str] = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+)
 
-# Post Types
+DEFAULT_DEVICE_NAME: Final[str] = "OnePlus Ace 5 Pro"
+DEFAULT_DEVICE_MODEL: Final[str] = "PKR110"
+DEFAULT_OS_LANG: Final[str] = "zh-cn"
+
+# Origins & Referers
+ORIGIN_MIHOYO_WEBSTATIC: Final[str] = "https://webstatic.mihoyo.com"
+ORIGIN_MIHOYO_ACT: Final[str] = "https://act.mihoyo.com"
+REFERER_MIHOYO_APP: Final[str] = "https://app.mihoyo.com"
+BBS_API_HOST: Final[str] = "bbs-api.miyoushe.com"
+
+# Built-in community forum table (fallback; unknown IDs dynamically sync via API_BBS_GAME_LIST)
 MIHOYOBBS_POST_TYPES: Final[dict[int, dict[str, str]]] = {
     1: {"id": "1", "forumId": "1", "name": "崩坏3"},
     2: {"id": "2", "forumId": "26", "name": "原神"},
@@ -76,6 +137,7 @@ GAME_INFO_ID_TO_NAME: Final[dict[str, str]] = {
     "hkrpg_cn": "崩坏：星穹铁道",
     "nap_cn": "绝区零",
     "abc_cn": "崩坏：因缘精灵",
+    "hyg_cn": "星布谷地",
 }
 
 GAME_INFO_ID_TO_CONFIG: Final[dict[str, str]] = {
@@ -83,13 +145,13 @@ GAME_INFO_ID_TO_CONFIG: Final[dict[str, str]] = {
     "bh3_cn": "honkai3rd",
     "nxx_cn": "tears_of_themis",
     "hk4e_cn": "genshin",
-    "hkrpg_cn": "honkaisr",
+    "hkrpg_cn": "honkai_sr",
     "nap_cn": "zzz",
     "abc_cn": "hna",
+    "hyg_cn": "planet",
 }
 
-# Game config keys for explicit iteration (replaces fragile key-blacklist
-# filtering in single_account.py). Kept in sync with BaseGamesConfig fields.
+# Supported built-in game config keys
 CN_GAME_KEYS: Final[tuple[str, ...]] = (
     "honkai2",
     "honkai3rd",
@@ -99,7 +161,6 @@ CN_GAME_KEYS: Final[tuple[str, ...]] = (
     "zzz",
 )
 OS_GAME_KEYS: Final[tuple[str, ...]] = (
-    "honkai2",
     "honkai3rd",
     "tears_of_themis",
     "genshin",
@@ -119,25 +180,24 @@ _UA_TEMPLATE = (
 DEFAULT_HEADERS: Final[dict[str, str]] = {
     "Accept": "application/json, text/plain, */*",
     "DS": "",
-    "x-rpc-channel": "miyousheluodi",
-    "Origin": "https://webstatic.mihoyo.com",
+    "x-rpc-channel": MIHOYOBBS_CHANNEL,
+    "Origin": ORIGIN_MIHOYO_WEBSTATIC,
     "x-rpc-app_version": MIHOYOBBS_VERSION,
     "User-Agent": _UA_TEMPLATE,
     "x-rpc-client_type": MIHOYOBBS_CLIENT_TYPE_WEB,
     "Referer": "",
     "Accept-Encoding": "gzip, deflate",
-    "Accept-Language": "zh-CN,en-US;q=0.8",
-    "X-Requested-With": "com.mihoyo.hyperion",
+    "Accept-Language": MIHOYOBBS_ACCEPT_LANGUAGE,
+    "X-Requested-With": MIHOYOBBS_X_REQUESTED_WITH,
     "Cookie": "",
     "x-rpc-device_id": "",
 }
 
 # API Constants
 # Base URLs
-API_BBS: Final[str] = "https://bbs-api.miyoushe.com"
+API_BBS: Final[str] = f"https://{BBS_API_HOST}"
 API_WEB: Final[str] = "https://api-takumi.mihoyo.com"
 API_PASSPORT: Final[str] = "https://passport-api.mihoyo.com"
-API_HK4E: Final[str] = "https://hk4e-api.mihoyo.com"
 API_CLOUD_GENSHIN: Final[str] = "https://api-cloudgame.mihoyo.com"
 API_CLOUD_ZZZ: Final[str] = "https://cg-nap-api.mihoyo.com"
 API_ZZZ_WEB: Final[str] = "https://act-nap-api.mihoyo.com"
@@ -148,24 +208,15 @@ API_OS_REFERER: Final[str] = "https://act.hoyolab.com/"
 
 # User & Token APIs
 API_ACCOUNT_INFO: Final[str] = f"{API_WEB}/binding/api/getUserGameRolesByCookie"
-API_GET_TOKEN_BY_STOKEN: Final[str] = (
-    f"{API_PASSPORT}/account/ma-cn-session/app/getTokenBySToken"
-)
-API_BBS_ACCOUNT_INFO: Final[str] = (
-    "https://webapi.account.mihoyo.com/Api/cookie_accountinfo_by_loginticket"
-)
-API_BBS_GET_MULTI_TOKEN: Final[str] = f"{API_WEB}/auth/api/getMultiTokenByLoginTicket"
+API_PASSPORT_EXCHANGE: Final[str] = f"{API_PASSPORT}/account/ma-cn-session/app/exchange"
 API_BBS_GET_COOKIE_TOKEN: Final[str] = (
     f"{API_WEB}/auth/api/getCookieAccountInfoBySToken"
 )
 
-# BBS Tasks & Posts
+# BBS Tasks & Game List
+API_BBS_GAME_LIST: Final[str] = f"{API_BBS}/apihub/wapi/getGameList"
 API_BBS_TASKS_LIST: Final[str] = f"{API_BBS}/apihub/wapi/getUserMissionsState"
 API_BBS_SIGN: Final[str] = f"{API_BBS}/apihub/app/api/signIn"
-API_BBS_POST_LIST: Final[str] = f"{API_BBS}/post/api/getForumPostList"
-API_BBS_POST_DETAIL: Final[str] = f"{API_BBS}/post/api/getPostFull"
-API_BBS_SHARE: Final[str] = f"{API_BBS}/apihub/api/getShareConf"
-API_BBS_LIKE: Final[str] = f"{API_BBS}/apihub/sapi/upvotePost"
 API_BBS_GET_CAPTCHA: Final[str] = f"{API_BBS}/misc/api/createVerification?is_high=true"
 API_BBS_CAPTCHA_VERIFY: Final[str] = f"{API_BBS}/misc/api/verifyVerification"
 
@@ -189,22 +240,6 @@ API_CLOUD_ZZZ_SIGN_OS: Final[str] = (
     f"{API_CLOUD_GENSHIN_OS}/nap_global/cg/wallet/wallet/get"
 )
 
-# HK4E / Genius Invokation
-API_HK4E_TOKEN_GET_INFO: Final[str] = f"{API_WEB}/common/badge/v1/login/info"
-API_GET_HK4E_TOKEN: Final[str] = f"{API_WEB}/common/badge/v1/login/account"
-API_GENIUS_INVOKATION_STATUS: Final[str] = (
-    f"{API_HK4E}/event/geniusinvokationtcg/rd_info"
-)
-API_GENIUS_INVOKATION_TASK_LIST: Final[str] = (
-    f"{API_HK4E}/event/geniusinvokationtcg/adventure_task_list"
-)
-API_GENIUS_INVOKATION_GET_AWARD: Final[str] = (
-    f"{API_HK4E}/event/geniusinvokationtcg/award_adventure_task"
-)
-API_GENIUS_INVOKATION_FINISH_TASK: Final[str] = (
-    f"{API_HK4E}/event/geniusinvokationtcg/finish_adventure_task"
-)
-
 # ZZZ Check-in
 API_ZZZ_GAME_CHECKIN_REWARDS: Final[str] = (
     f"{API_ZZZ_WEB}/event/luna/zzz/home?lang={CN_GAME_LANG}"
@@ -215,22 +250,17 @@ API_ZZZ_GAME_IS_SIGN: Final[str] = (
 API_ZZZ_GAME_SIGN: Final[str] = f"{API_ZZZ_WEB}/event/luna/zzz/sign"
 
 # CN Game Signin Referers (Base)
-REF_BH2_SIGN: Final[str] = (
-    "https://webstatic.mihoyo.com/bbs/event/signin/bh2/index.html"
-)
-REF_BH3_SIGN: Final[str] = (
-    "https://webstatic.mihoyo.com/bbs/event/signin/bh3/index.html"
-)
-REF_NXX_SIGN: Final[str] = (
-    "https://webstatic.mihoyo.com/bbs/event/signin/nxx/index.html"
-)
 REF_GENSHIN_SIGN: Final[str] = (
-    "https://webstatic.mihoyo.com/bbs/event/signin-ys/index.html"
+    f"{ORIGIN_MIHOYO_WEBSTATIC}/bbs/event/signin-ys/index.html"
 )
+REF_BH2_SIGN: Final[str] = f"{ORIGIN_MIHOYO_WEBSTATIC}/bbs/event/signin/bh2/index.html"
+REF_BH3_SIGN: Final[str] = f"{ORIGIN_MIHOYO_WEBSTATIC}/bbs/event/signin/bh3/index.html"
+REF_NXX_SIGN: Final[str] = f"{ORIGIN_MIHOYO_WEBSTATIC}/bbs/event/signin/nxx/index.html"
 
 # OS Game Signin Base URL
 API_OS_ACT: Final[str] = "https://sg-hk4e-api.hoyolab.com/event/sol"
-API_OS_ACT_HSR: Final[str] = "https://sg-public-api.hoyolab.com/event/luna/os"
+API_OS_ACT_LUNA: Final[str] = "https://sg-public-api.hoyolab.com/event/luna/os"
+API_OS_ACT_HSR: Final[str] = API_OS_ACT_LUNA
 API_OS_ACT_HI3: Final[str] = "https://sg-public-api.hoyolab.com/event/mani"
 API_OS_ACT_ZZZ: Final[str] = "https://sg-act-nap-api.hoyolab.com/event/luna/zzz/os"
 
@@ -249,3 +279,11 @@ ACT_ID_OS_HONKAI3RD: Final[str] = "e202110291205111"
 ACT_ID_OS_TEARS_OF_THEMIS: Final[str] = "e202202281857121"
 ACT_ID_OS_HONKAI_SR: Final[str] = "e202303301540311"
 ACT_ID_OS_ZZZ: Final[str] = "e202406031448091"
+
+OS_ACT_ID_TO_SIGNGAME: Final[dict[str, str]] = {
+    ACT_ID_OS_GENSHIN: "hk4e",
+    ACT_ID_OS_HONKAI3RD: "bh3",
+    ACT_ID_OS_TEARS_OF_THEMIS: "nxx",
+    ACT_ID_OS_HONKAI_SR: "hkrpg",
+    ACT_ID_OS_ZZZ: "zzz",
+}

@@ -3,6 +3,7 @@ import locale
 import os
 from typing import Any, cast
 
+from .constants import EnvVar
 from .loghelper import log
 
 
@@ -17,8 +18,8 @@ class I18n:
         self._detect_language()
 
     def _detect_language(self) -> None:
-        """Detect system language or use ENVRIONMENT variable."""
-        env_lang = os.getenv("HOYO_ASSISTANT_LANGUAGE")
+        """Detect system language or use ENVIRONMENT variable."""
+        env_lang = os.getenv(EnvVar.LANGUAGE)
         if env_lang:
             self._current_lang = env_lang
             log.debug(f"Language set from env: {self._current_lang}")
@@ -27,7 +28,7 @@ class I18n:
         try:
             sys_lang_code = locale.getlocale()[0]
             if not sys_lang_code:
-                lang_env = os.getenv("LANG", "")
+                lang_env = os.getenv(EnvVar.LANG_FALLBACK, "")
                 sys_lang_code = (
                     lang_env.split(".")[0].replace("-", "_") if lang_env else None
                 )

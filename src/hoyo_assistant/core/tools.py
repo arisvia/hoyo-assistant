@@ -9,10 +9,13 @@ from . import t
 from .constants import (
     DEFAULT_HEADERS,
     MIHOYOBBS_SALT,
+    MIHOYOBBS_SALT_PASSPORT,
     MIHOYOBBS_SALT_WEB,
     MIHOYOBBS_SALT_X6,
     MIHOYOBBS_VERSION,
 )
+
+_lifecycle_id: str = ""
 
 
 def md5(text: str) -> str:
@@ -47,6 +50,21 @@ def timestamp() -> int:
     return int(time.time())
 
 
+def refresh_lifecycle_id() -> str:
+    """刷新本次运行的 lifecycle_id（对应 x-rpc-lifecycle_id）。"""
+    global _lifecycle_id
+    _lifecycle_id = str(uuid.uuid4())
+    return _lifecycle_id
+
+
+def get_lifecycle_id() -> str:
+    """获取本次运行的 lifecycle_id；若尚未初始化则自动生成一个 UUID。"""
+    global _lifecycle_id
+    if not _lifecycle_id:
+        _lifecycle_id = str(uuid.uuid4())
+    return _lifecycle_id
+
+
 def get_ds(web: bool) -> str:
     """
     获取米游社的签名字符串，用于访问米游社API时的签名验证。
@@ -78,6 +96,14 @@ def get_ds2(query: str = "", body: str = "") -> str:
     return f"{i},{r},{c}"
 
 
+def get_ds_passport(body: str = "", query: str = "") -> str:
+    """获取通行证 V2 接口所需的 DS 签名字符串。"""
+    i = str(timestamp())
+    r = random_text(6)
+    c = md5(f"salt={MIHOYOBBS_SALT_PASSPORT}&t={i}&r={r}&b={body}&q={query}")
+    return f"{i},{r},{c}"
+
+
 def get_device_id(cookie: str) -> str:
     """
     使用 cookie 通过 uuid v3 生成设备 ID。
@@ -98,17 +124,6 @@ def get_item(raw_data: dict[str, Any]) -> str:
     temp_name = raw_data["name"]
     temp_cnt = raw_data["cnt"]
     return f"「{temp_name}」x{temp_cnt}"
-
-
-def get_next_day_timestamp() -> int:
-    """
-    获取明天凌晨的时间戳。
-
-    :return: 明天凌晨的时间戳
-    """
-    now_time = int(time.time())
-    next_day_time = now_time - now_time % 86400 + time.timezone + 86400
-    return next_day_time
 
 
 def time_conversion(minute: int) -> str:
@@ -136,10 +151,10 @@ def tidy_cookie(cookies: str) -> str:
         return cookies
     for cookie in spilt_cookie:
         cookie = cookie.strip()
-        if cookie == "":
+        if cookie == "" or "=" not in cookie:
             continue
         key, value = cookie.split("=", 1)
-        cookie_dict[key] = value
+        cookie_dict[key.strip()] = value.strip()
     return "; ".join([f"{key}={value}" for key, value in cookie_dict.items()])
 
 
@@ -163,7 +178,7 @@ def get_useragent(useragent: str) -> str:
 def resolve_user_agent(custom: str = "") -> str:
     """Resolve the effective User-Agent for browser-style endpoints.
 
-    Single source of truth for CN signin / OS signin / community headers.
+    Single source of truth for CN signin / community headers.
     Empty/unset ``custom`` falls back to the default UA template (which already
     carries the ``miHoYoBBS/{version}`` suffix). A non-empty custom UA gets the
     suffix appended (deduped) so every endpoint speaks the same protocol.
@@ -172,18 +187,3 @@ def resolve_user_agent(custom: str = "") -> str:
     :return: a UA string containing exactly one ``miHoYoBBS/{version}`` token.
     """
     return get_useragent(custom or "")
-
-
-def get_openssl_version() -> int:
-    """
-    获取openssl版本号
-
-    :return: OpenSSL 的版本号。
-    """
-    try:
-        import ssl
-    except ImportError as e:
-        raise ImportError("Openssl Lib Error !!") from e
-
-    temp_list = ssl.OPENSSL_VERSION_INFO
-    return int(f"{str(temp_list[0])}{str(temp_list[1])}{str(temp_list[2])}")

@@ -4,11 +4,13 @@ from hoyo_assistant.core.tools import (
     get_device_id,
     get_ds,
     get_ds2,
+    get_ds_passport,
     get_item,
-    get_next_day_timestamp,
+    get_lifecycle_id,
     get_useragent,
     md5,
     random_text,
+    refresh_lifecycle_id,
     resolve_user_agent,
     tidy_cookie,
     time_conversion,
@@ -110,16 +112,6 @@ class TestGetItem:
         assert result == "「纠缠之缘」x1"
 
 
-class TestGetNextDayTimestamp:
-    def test_get_next_day_timestamp_type(self):
-        ts = get_next_day_timestamp()
-        assert isinstance(ts, int)
-
-    def test_get_next_day_timestamp_future(self):
-        ts = get_next_day_timestamp()
-        assert ts > timestamp()
-
-
 class TestTimeConversion:
     def test_time_conversion_hours_minutes(self):
         result = time_conversion(90)
@@ -186,3 +178,25 @@ class TestResolveUserAgent:
         assert ua.startswith("MyUA")
         assert "miHoYoBBS" in ua
         assert ua.count("miHoYoBBS") == 1
+
+
+class TestPassportAndLifecycle:
+    def test_get_ds_passport_format(self):
+        ds = get_ds_passport(body='{"a":1}', query="")
+        parts = ds.split(",")
+        assert len(parts) == 3
+        assert parts[0].isdigit()
+        assert len(parts[1]) == 6
+        assert len(parts[2]) == 32
+
+    def test_lifecycle_id_refresh(self):
+        first = get_lifecycle_id()
+        assert len(first) == 36
+        second = refresh_lifecycle_id()
+        assert len(second) == 36
+        assert get_lifecycle_id() == second
+        assert second != first
+
+    def test_tidy_cookie_skips_malformed_segments(self):
+        result = tidy_cookie("a=1; malformed_segment; b = 2")
+        assert result == "a=1; b=2"

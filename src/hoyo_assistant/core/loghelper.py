@@ -5,6 +5,8 @@ from types import FrameType
 
 from loguru import logger
 
+from .constants import EnvVar
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 
@@ -46,7 +48,7 @@ def setup_logger(
     normalized_level = str(log_level or "INFO").upper()
     if normalized_level not in VALID_LOG_LEVELS:
         sys.stderr.write(
-            f"Invalid HOYO_ASSISTANT_LOG_LEVEL={normalized_level}, fallback to INFO\n"
+            f"Invalid {EnvVar.LOG_LEVEL}={normalized_level}, fallback to INFO\n"
         )
         normalized_level = "INFO"
 
@@ -57,22 +59,19 @@ def setup_logger(
     # Priority: explicit arg > env var > CWD/logs
     default_log_dir = os.path.join(os.getcwd(), "logs")
     if log_dir is None:
-        log_dir = os.environ.get("HOYO_ASSISTANT_LOG_DIR", default_log_dir)
+        log_dir = os.environ.get(EnvVar.LOG_DIR, default_log_dir)
 
     # Log Retention and Rotation Configs
-    rotation = os.environ.get("HOYO_ASSISTANT_LOG_ROTATION", "10 MB")
-    retention = os.environ.get("HOYO_ASSISTANT_LOG_RETENTION", "1 week")
+    rotation = os.environ.get(EnvVar.LOG_ROTATION, "10 MB")
+    retention = os.environ.get(EnvVar.LOG_RETENTION, "1 week")
 
     # Environment flags to control outputs (explicit args take priority)
     if console_enable is None:
         console_enable = (
-            os.environ.get("HOYO_ASSISTANT_LOG_CONSOLE_ENABLE", "true").lower()
-            == "true"
+            os.environ.get(EnvVar.LOG_CONSOLE_ENABLE, "true").lower() == "true"
         )
     if file_enable is None:
-        file_enable = (
-            os.environ.get("HOYO_ASSISTANT_LOG_FILE_ENABLE", "true").lower() == "true"
-        )
+        file_enable = os.environ.get(EnvVar.LOG_FILE_ENABLE, "true").lower() == "true"
 
     # Add console handler with improved format
     # Business Logic logs (INFO+) shown to user. Runtime logs (DEBUG) hidden unless requested.
@@ -126,7 +125,7 @@ def setup_logger(
             logging_logger.setLevel(logging.WARNING)
 
 
-_env_log_level = os.environ.get("HOYO_ASSISTANT_LOG_LEVEL", "INFO").upper()
+_env_log_level = os.environ.get(EnvVar.LOG_LEVEL, "INFO").upper()
 setup_logger(_env_log_level)
 
 log = logger
