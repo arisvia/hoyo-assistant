@@ -29,3 +29,23 @@ async def test_httpclient_freeze_and_cache():
     resp = await c.get("http://example")
     assert isinstance(resp, MockResponse)
     assert await resp.json() == {"ok": True}
+
+
+def test_httpclient_cache_key_isolates_combo_token():
+    c = HttpClient()
+    k1 = c._build_cache_key(
+        "https://api-cloudgame.mihoyo.com/wallet",
+        headers={"x-rpc-combo_token": "tok_account_1"},
+    )
+    k2 = c._build_cache_key(
+        "https://api-cloudgame.mihoyo.com/wallet",
+        headers={"X-Rpc-Combo_Token": "tok_account_2"},
+    )
+    k_none = c._build_cache_key("https://api-cloudgame.mihoyo.com/wallet", headers={})
+    assert k1 != k2
+    assert k1 != k_none
+
+
+def test_httpclient_session_usable_false_initially():
+    c = HttpClient()
+    assert c._is_session_usable() is False

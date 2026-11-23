@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=82.0.1", "wheel"]
+requires = ["setuptools>=82.0.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -23,7 +23,6 @@ classifiers = [
     "Topic :: Games/Entertainment",
 ]
 dependencies = [
-    "aiodns",
     "aiohttp[speedups]",
     "cachetools",
     "loguru",
@@ -31,7 +30,6 @@ dependencies = [
     "rich",
     "tenacity",
     "pydantic-settings",
-    "orjson",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +46,7 @@ dev = [
 
 [project.scripts]
 hoyo-assistant = "hoyo_assistant.cli:main"
+hoyo-cli = "hoyo_assistant.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/arisvia/hoyo-assistant"
@@ -95,6 +94,7 @@ minversion = "7.0"
 addopts = "-ra -q --cov=hoyo_assistant --cov-report=term-missing"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
 ]

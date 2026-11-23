@@ -1,9 +1,9 @@
 import asyncio
+import json
 from contextlib import suppress
 from typing import Any
 
 import aiohttp
-import orjson
 from cachetools import TTLCache
 from tenacity import (
     AsyncRetrying,
@@ -20,7 +20,6 @@ from .constants import (
     CACHE_TTL,
     CONNECTOR_LIMIT,
     CONNECTOR_LIMIT_PER_HOST,
-    DEFAULT_HEADERS,
     DNS_SERVERS,
     RETRY_INTERVAL,
     RETRY_TIMES,
@@ -43,7 +42,9 @@ class MockResponse:
     async def text(self, **kwargs: Any) -> str | None:
         if self._body is None:
             try:
-                self._body = orjson.dumps(self._data).decode()
+                self._body = json.dumps(
+                    self._data, separators=(",", ":"), ensure_ascii=False
+                )
             except Exception:
                 self._body = str(self._data)
         return self._body
@@ -62,12 +63,24 @@ class HttpClient:
 
     def __init__(self) -> None:
         self.session: aiohttp.ClientSession | None = None
+        self._session_loop: asyncio.AbstractEventLoop | None = None
         # Cache key: tuple(url, params_freeze, auth_scope_freeze) -> Any
         self.cache: TTLCache[tuple[str, Any, Any], Any] = TTLCache(
             maxsize=CACHE_MAX_SIZE, ttl=CACHE_TTL
         )
         self.request_count = 0
         self.cache_hits = 0
+
+    def _is_session_usable(self) -> bool:
+        """Return True if session exists, is open, and belongs to the running loop."""
+        if not self.session or self.session.closed:
+            return False
+        if self._session_loop is None or self._session_loop.is_closed():
+            return False
+        try:
+            return self._session_loop is asyncio.get_running_loop()
+        except RuntimeError:
+            return False
 
     @staticmethod
     def _freeze(value: Any) -> Any:
@@ -83,12 +96,14 @@ class HttpClient:
     def _build_cache_key(self, url: str, **kwargs: Any) -> tuple[str, Any, Any]:
         params = kwargs.get("params") or {}
         headers: dict[str, str] = kwargs.get("headers") or {}
+        lower_headers = {k.lower(): v for k, v in headers.items()}
         auth_scope = {
-            "cookie": headers.get("cookie") or headers.get("Cookie") or "",
-            "authorization": headers.get("authorization")
-            or headers.get("Authorization")
-            or "",
+            "cookie": lower_headers.get("cookie") or "",
+            "authorization": lower_headers.get("authorization") or "",
         }
+        combo_token = lower_headers.get("x-rpc-combo_token")
+        if combo_token:
+            auth_scope["combo_token"] = combo_token
         return url, self._freeze(params), self._freeze(auth_scope)
 
     async def __aenter__(self) -> "HttpClient":
@@ -102,7 +117,7 @@ class HttpClient:
 
     async def initialize(self) -> None:
         """初始化会话和连接池"""
-        if self.session and not self.session.closed:
+        if self._is_session_usable():
             return
 
         resolver = None
@@ -120,22 +135,25 @@ class HttpClient:
         timeout = aiohttp.ClientTimeout(total=ASYNC_TIMEOUT)
 
         def json_serializer(x: Any) -> str:
-            val = orjson.dumps(x).decode()
-            return str(val)
+            return json.dumps(x, separators=(",", ":"), ensure_ascii=False)
 
         self.session = aiohttp.ClientSession(
             connector=connector,
             timeout=timeout,
-            headers=DEFAULT_HEADERS,
+            headers={"Accept": "application/json, text/plain, */*"},
             json_serialize=json_serializer,
             trust_env=True,
         )
+        self._session_loop = asyncio.get_running_loop()
         log.debug(t("system.client_init"))
 
     async def close(self) -> None:
         """关闭会话"""
         if self.session:
-            await self.session.close()
+            if not self.session.closed and self._is_session_usable():
+                await self.session.close()
+            self.session = None
+            self._session_loop = None
             log.debug(t("system.client_close"))
 
         rate = self.cache_hits / max(self.request_count, 1) * 100
@@ -162,7 +180,7 @@ class HttpClient:
             log.debug(t("system.cache_hit", url=url))
             return MockResponse(self.cache[cache_key], url=url)
 
-        if not self.session or self.session.closed:
+        if not self._is_session_usable():
             await self.initialize()
 
         # Local alias to help the type checker know session is not None
@@ -193,7 +211,11 @@ class HttpClient:
                                     in response.headers.get("Content-Type", "").lower()
                                 ):
                                     data = await response.json()
-                                    self.cache[cache_key] = data
+                                    if not (
+                                        isinstance(data, dict)
+                                        and data.get("retcode", 0) != 0
+                                    ):
+                                        self.cache[cache_key] = data
 
                         if response.status == 429:  # Rate limit
                             reset_time = response.headers.get("X-RateLimit-Reset")
@@ -205,7 +227,7 @@ class HttpClient:
 
                     except Exception as e:
                         response.release()
-                        log.debug(t("system.request_success"), result=e)
+                        log.debug(t("system.request_exception", error=str(e)))
                         raise e
 
         except RetryError as e:
@@ -225,43 +247,6 @@ class HttpClient:
     async def post(self, url: str, **kwargs: Any) -> Any:
         """发送POST请求"""
         return await self.request("POST", url, **kwargs)
-
-    async def raw_get(self, url: str) -> Any:
-        """获取原始二进制内容（用于下载文件）"""
-        self.request_count += 1
-
-        if not self.session:
-            await self.initialize()
-
-        # Local variable to help mypy narrow Optional[aiohttp.ClientSession]
-        session = self.session
-        if session is None:
-            return None
-
-        try:
-            async for attempt in AsyncRetrying(
-                retry=retry_if_exception_type(
-                    (aiohttp.ClientError, asyncio.TimeoutError)
-                ),
-                stop=stop_after_attempt(RETRY_TIMES),
-                wait=wait_exponential(multiplier=RETRY_INTERVAL, min=1, max=10),
-                reraise=True,
-            ):
-                with attempt:
-                    async with session.get(url) as response:
-                        if response.status == 200:
-                            return await response.read()
-                        else:
-                            raise aiohttp.ClientError(f"HTTP {response.status}")
-
-        except RetryError:
-            log.error(t("system.retry_fail", retry=RETRY_TIMES, url=url))
-            return None
-        except Exception as e:
-            log.error(t("system.request_exception", error=str(e)))
-            return None
-        # Ensure explicit return for all code paths
-        return None
 
     def clear_cache(self) -> None:
         """清空缓存"""
