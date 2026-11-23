@@ -1,69 +1,95 @@
 enable: true
-account:
-  cookie: "ltuid=xxx;ltoken=xxx;mid=xxx;cookie_token=xxx;"
-  stuid: "xxx"
-  stoken: "v2_xxx"
-  mid: "xxx"
+
+# 国服（米游社社区 + 国服游戏签到 + 国服云游戏）
+cn:
+  cookie: ""
+  stuid: ""
+  stoken: ""
+  mid: ""
+  retries: 3
+  bbs:
+    enable: true
+    # 1=崩坏3, 2=原神, 3=崩坏学园2, 4=未定事件簿, 5=大别野, 6=崩坏：星穹铁道, 8=绝区零
+    # 9=崩坏：因缘精灵, 10=星布谷地（未知新游戏版块 ID 将自动从米游社接口同步）
+    forums:
+      - 2
+      - 5
+  # 可选值: genshin, honkai_sr, zzz, honkai3rd, tears_of_themis, honkai2
+  games:
+    - genshin
+    - honkai_sr
+    - zzz
+  # 按游戏 ID 配置黑名单 UID（可选）
+  # black_list:
+  #   genshin: ["10001"]
+  # 新上线国服游戏可直接在此扩展（如星布谷地 / 崩坏：因缘精灵）
+  # custom_games:
+  #   planet:
+  #     enable: true
+  #     name: "星布谷地"
+  #     game_biz: "hyg_cn"
+  #     act_id: "e2026xxxxxxxxxx"
+  #     signgame: "planet"
+  cloud:
+    genshin: ""
+    zzz: ""
+
+# 国际服（HoYoLAB 游戏签到 + 国际服云游戏）
+os:
+  cookie: ""
+  lang: "zh-cn"
+  # 可选值: genshin, honkai_sr, zzz, honkai3rd, tears_of_themis
+  games: []
+  # custom_games:
+  #   planet:
+  #     enable: true
+  #     name: "Petit Planet"
+  #     act_id: "e2026xxxxxxxxxx"
+  #     signgame: "planet"
+  cloud:
+    genshin: ""
+    zzz: ""
+
+# 客户端身份标识（留空则自动生成 / 使用默认值）
 client:
-  user_agent: ""  # empty = default miHoYoBBS UA; set to override (suffix auto-appended)
+  user_agent: ""
   device:
     name: "OnePlus Ace 5 Pro"
     model: "PKR110"
-    id: "6a6bf449-7cb8-3df2-b3ca-0eb8aa881437"
-    fp: "38d8113b7733d"
-mihoyobbs:
-  checkin: true
-  checkin_list:
-    - 2
-    - 5
-games:
-  cn:
-    retries: 3
-    genshin:
-      checkin: true
-    honkai_sr:
-      checkin: true
-    zzz:
-      checkin: true
-  os:
-    cookie: ""
-    lang: "zh-cn"
-    genshin:
-      checkin: false
-cloud_games:
-  cn:
-    genshin:
-      token: ""
-    zzz:
-      token: ""
-  os:
-    lang: "zh-cn"
-    genshin:
-      token: ""
-    zzz:
-      token: ""
-web_activity:
-  activities: []
+    id: ""
+    fp: ""
+
+# 推送通知（active 留空时将自动向 channels 中已配置的所有渠道推送）
 push:
-  enable: true
-  active:
-    - telegram
-    - discord
-  push_block_keys: ""
-  error_push_only: false
-  telegram:
-    api_url: "api.telegram.org"
-    bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
-    chat_id: "YOUR_TELEGRAM_CHAT_ID"
-  discord:
-    webhook: "YOUR_DISCORD_WEBHOOK_URL"
-  smtp:
-    mailhost: "smtp.example.com"
-    port: 465
-    username: "sender@example.com"
-    password: "YOUR_SMTP_PASSWORD"
-    fromaddr: "sender@example.com"
-    toaddr: "receiver@example.com"
-    subject: "HoyoAssistant Signin Report"
-    ssl_enable: true
-    background: true
+  enable: false
+  error_only: false
+  block_keys: []
+  active: []
+  channels:
+    # telegram:
+    #   api_url: "api.telegram.org"
+    #   bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
+    #   chat_id: "YOUR_TELEGRAM_CHAT_ID"
+    # discord:
+    #   webhook: "YOUR_DISCORD_WEBHOOK_URL"
+    # feishubot:
+    #   webhook: "YOUR_FEISHU_WEBHOOK_URL"
+    #   secret: ""
+    # wxpusher:
+    #   app_token: "AT_xxx"
+    #   uids: ["UID_xxx"]
+    #   topic_ids: []
+    # ntfy:
+    #   api_url: "https://ntfy.sh"
+    #   topic: "hoyo-assistant"
+    #   token: ""
+    # smtp:
+    #   mailhost: "smtp.example.com"
+    #   port: 465
+    #   username: "sender@example.com"
+    #   password: "YOUR_SMTP_PASSWORD"
+    #   fromaddr: "sender@example.com"
+    #   toaddr: "receiver@example.com"
+    #   subject: "HoyoAssistant Signin Report"
+    #   ssl_enable: true
+    #   background: false

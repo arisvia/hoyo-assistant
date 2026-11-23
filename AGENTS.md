@@ -19,7 +19,7 @@
 
 ## Runtime Environment Variables (Non-Pydantic)
 
-These variables control system behavior outside the main configuration schema:
+All environment variable names are centralized in `core/constants.py:EnvVar`. These variables control system behavior outside the main configuration schema:
 
 - **Logging**:
     - `HOYO_ASSISTANT_LOG_DIR` (default: `logs`): Log output directory.
@@ -35,15 +35,16 @@ These variables control system behavior outside the main configuration schema:
     - `LANG`: System language fallback.
 
 - **Validation**:
-    - `HOYO_ASSISTANT_PUSH__ENABLE` (default: `false`): Global master switch for push notifications.
+    - `HOYO_ASSISTANT_PUSH__ENABLE` (default: `false`): Global master switch for push notifications (supports explicit `true`/`false`).
 
 ## Architecture Quick Map
 
-- `src/hoyo_assistant/cli.py`: arg parsing, run-mode resolution, config bootstrap/reload, runner dispatch.
-- `src/hoyo_assistant/core/setting.py` + `core/setting_schema.py`: file/env merge, runtime overrides, schema validation. Top-level config keys: `enable`, `account`, `client` (groups `user_agent` + `device`), `mihoyobbs`, `games` (`cn`/`os`), `cloud_games` (`cn`/`os`), `web_activity`, `push`. There is no `version` field (removed as dead code). `client.user_agent` is the single global UA source; empty falls back to the default template (see `tools.resolve_user_agent`).
+- `src/hoyo_assistant/cli.py`: arg parsing (`build_parser`), run-mode resolution, config bootstrap/reload, runner dispatch.
+- `src/hoyo_assistant/core/constants.py`: centralized constants (`EnvVar`, `StatusCode`, `RetCode`, protocol headers/UAs/URLs, delay ranges, built-in game & forum tables).
+- `src/hoyo_assistant/core/setting.py` + `core/setting_schema.py`: pure v2 strict Pydantic config schema + file/env merge + runtime overrides. Top-level config keys: `enable`, `cn` (`cookie`/`stuid`/`stoken`/`mid`/`retries`/`bbs`/`games`/`black_list`/`custom_games`/`cloud`), `os` (`cookie`/`lang`/`games`/`custom_games`/`cloud`), `client` (`user_agent` + `device`), `push` (`enable`/`error_only`/`block_keys`/`active`/`channels` with strongly typed per-channel models). `client.user_agent` is the single global UA source; empty falls back to the default template (see `tools.resolve_user_agent`).
 - `src/hoyo_assistant/runner/single_account.py`: one-account orchestration + optional push.
 - `src/hoyo_assistant/runner/multi_account.py`: config target discovery, per-account loop, summary aggregation.
-- `src/hoyo_assistant/core/request.py`: shared async HTTP client (retry + GET cache). Exports a global `http` client instance used across modules; supports TTL caching (GET), MockResponse for cache hits, and tenacity-based retries.
-- `src/hoyo_assistant/core/push.py`: `PushHandler` provider dispatch.
-- `src/hoyo_assistant/tasks/**`: feature modules exposing `run_task()`.
-- `src/hoyo_assistant/server.py`: interactive scheduler / server console (implements `ServerConfig`, `start_interactive_console`, `scheduler_loop` and `execute_task`). Used by the `server` CLI subcommand to run scheduled multi/single account runs with an interactive prompt.
+- `src/hoyo_assistant/core/request.py`: shared async HTTP client (retry + GET cache, stdlib `json`). Exports a global `http` client instance used across modules; supports TTL caching (GET, skips `retcode != 0`), `MockResponse` for cache hits, and tenacity-based retries.
+- `src/hoyo_assistant/core/push.py`: `PushHandler` provider dispatch reading typed configs from `push.channels` (auto-dispatches all configured channels when `push.active` is empty).
+- `src/hoyo_assistant/tasks/**`: feature modules (`chinese`, `overseas`, `community`, `base`) exposing `run_task()`. `tasks/community/miyoushe.py` dynamically resolves unknown forum IDs in `cn.bbs.forums` via `API_BBS_GAME_LIST`.
+- `src/hoyo_assistant/server.py`: interactive scheduler / server console (implements `ServerSettings`, `start_interactive_console`, `scheduler_loop` and `execute_task`). Used by the `server` CLI subcommand to run scheduled multi/single account runs with an interactive prompt.
