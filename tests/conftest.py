@@ -1,17 +1,40 @@
-"""Test configuration and fixtures."""
+"""Test configuration and fixtures (pure v2 schema)."""
 
 import pytest
 
 
 @pytest.fixture
 def mock_config():
-    """Provide a minimal config dict for testing."""
+    """Provide a minimal v2 config dict for testing."""
     return {
-        "account": {
+        "enable": True,
+        "cn": {
             "cookie": "",
             "stoken": "",
             "stuid": "",
             "mid": "",
+            "retries": 1,
+            "bbs": {
+                "enable": False,
+                "forums": [],
+            },
+            "games": [],
+            "black_list": {},
+            "custom_games": {},
+            "cloud": {
+                "genshin": "",
+                "zzz": "",
+            },
+        },
+        "os": {
+            "cookie": "",
+            "lang": "en-us",
+            "games": [],
+            "custom_games": {},
+            "cloud": {
+                "genshin": "",
+                "zzz": "",
+            },
         },
         "client": {
             "user_agent": "TestUA",
@@ -22,47 +45,17 @@ def mock_config():
                 "fp": "",
             },
         },
-        "mihoyobbs": {
-            "checkin": False,
-            "checkin_list": [],
-        },
-        "games": {
-            "cn": {
-                "retries": 1,
-                "genshin": {"checkin": False, "black_list": []},
-                "honkai2": {"checkin": False, "black_list": []},
-                "honkai3rd": {"checkin": False, "black_list": []},
-                "tears_of_themis": {"checkin": False, "black_list": []},
-                "honkai_sr": {"checkin": False, "black_list": []},
-                "zzz": {"checkin": False, "black_list": []},
-            },
-            "os": {
-                "cookie": "",
-                "lang": "en-us",
-                "genshin": {"checkin": False, "black_list": []},
-                "honkai2": {"checkin": False, "black_list": []},
-                "honkai3rd": {"checkin": False, "black_list": []},
-                "tears_of_themis": {"checkin": False, "black_list": []},
-                "honkai_sr": {"checkin": False, "black_list": []},
-                "zzz": {"checkin": False, "black_list": []},
-            },
-        },
-        "cloud_games": {
-            "cn": {
-                "genshin": {"token": ""},
-                "zzz": {"token": ""},
-            },
-            "os": {
-                "lang": "en-us",
-                "genshin": {"token": ""},
-                "zzz": {"token": ""},
-            },
-        },
         "push": {
             "enable": False,
-            "telegram": {
-                "token": "",
-                "chat_id": "",
+            "error_only": False,
+            "block_keys": [],
+            "active": [],
+            "channels": {
+                "telegram": {
+                    "api_url": "api.telegram.org",
+                    "bot_token": "",
+                    "chat_id": "",
+                },
             },
         },
     }

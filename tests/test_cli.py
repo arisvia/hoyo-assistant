@@ -10,41 +10,6 @@ import pytest
 from hoyo_assistant import cli
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    """Reproduce the parser defined inline in cli.main for flag-level tests.
-
-    ponytail: source defines the parser inside main() (no extracted factory).
-    If main() ever exposes init_command_args(), switch these tests to call it.
-    """
-    parser = argparse.ArgumentParser(
-        description="test",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument("-c", "--config", dest="configs", nargs="+")
-    parser.add_argument("-m", "--multi", action="store_true")
-    parser.add_argument("-d", "--debug", action="store_true")
-    parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
-    parser.add_argument("--log-dir")
-    parser.add_argument("--no-log", action="store_true")
-
-    subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("server")
-    check_parser = subparsers.add_parser("check")
-    check_parser.add_argument("-c", "--config")
-    check_parser.add_argument("--effective", action="store_true")
-    template_parser = subparsers.add_parser("template")
-    template_parser.add_argument("-o", "--output")
-    fill_config_parser = subparsers.add_parser("format")
-    fill_config_parser.add_argument("-c", "--config", required=True)
-    fill_config_parser.add_argument("--no-backup", action="store_true")
-    return parser
-
-
-# ---------------------------------------------------------------------------
 # init_command_args / parser flag coverage
 # ---------------------------------------------------------------------------
 
@@ -52,7 +17,7 @@ def _build_parser() -> argparse.ArgumentParser:
 class TestParserFlags:
     def test_no_args_defaults(self):
         with patch("sys.argv", ["hoyo-cli"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.configs is None
         assert args.multi is False
         assert args.debug is False
@@ -60,48 +25,48 @@ class TestParserFlags:
 
     def test_config_single(self):
         with patch("sys.argv", ["hoyo-cli", "-c", "config.yaml"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.configs == ["config.yaml"]
 
     def test_config_multiple(self):
         with patch("sys.argv", ["hoyo-cli", "-c", "a.yaml", "b.yaml"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.configs == ["a.yaml", "b.yaml"]
 
     def test_multi_flag_short(self):
         with patch("sys.argv", ["hoyo-cli", "-m"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.multi is True
 
     def test_multi_flag_long(self):
         with patch("sys.argv", ["hoyo-cli", "--multi"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.multi is True
 
     def test_debug_flag(self):
         with patch("sys.argv", ["hoyo-cli", "-d"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.debug is True
 
     def test_log_level_valid(self):
         for level in ["DEBUG", "INFO", "WARNING", "ERROR"]:
             with patch("sys.argv", ["hoyo-cli", "--log-level", level]):
-                args = _build_parser().parse_args()
+                args = cli.build_parser().parse_args()
                 assert args.log_level == level
 
     def test_log_level_invalid_rejected(self):
         with patch("sys.argv", ["hoyo-cli", "--log-level", "TRACE"]):
             with pytest.raises(SystemExit):
-                _build_parser().parse_args()
+                cli.build_parser().parse_args()
 
     def test_log_dir(self):
         with patch("sys.argv", ["hoyo-cli", "--log-dir", "/tmp/logs"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.log_dir == "/tmp/logs"
 
     def test_no_log_flag(self):
         with patch("sys.argv", ["hoyo-cli", "--no-log"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.no_log is True
 
     def test_combined_global_flags(self):
@@ -120,7 +85,7 @@ class TestParserFlags:
                 "--no-log",
             ],
         ):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.configs == ["c.yaml"]
         assert args.multi is True
         assert args.debug is True
@@ -137,12 +102,12 @@ class TestParserFlags:
 class TestSubcommands:
     def test_server_subcommand(self):
         with patch("sys.argv", ["hoyo-cli", "server"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.command == "server"
 
     def test_check_subcommand_default(self):
         with patch("sys.argv", ["hoyo-cli", "check"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.command == "check"
         assert args.config is None
         assert args.effective is False
@@ -152,20 +117,20 @@ class TestSubcommands:
             "sys.argv",
             ["hoyo-cli", "check", "-c", "config.yaml", "--effective"],
         ):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.command == "check"
         assert args.config == "config.yaml"
         assert args.effective is True
 
     def test_template_subcommand_default(self):
         with patch("sys.argv", ["hoyo-cli", "template"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.command == "template"
         assert args.output is None
 
     def test_template_subcommand_with_output(self):
         with patch("sys.argv", ["hoyo-cli", "template", "-o", "out.yaml"]):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.command == "template"
         assert args.output == "out.yaml"
 
@@ -174,7 +139,7 @@ class TestSubcommands:
             "sys.argv",
             ["hoyo-cli", "format", "-c", "config.yaml", "--no-backup"],
         ):
-            args = _build_parser().parse_args()
+            args = cli.build_parser().parse_args()
         assert args.command == "format"
         assert args.config == "config.yaml"
         assert args.no_backup is True
@@ -182,7 +147,7 @@ class TestSubcommands:
     def test_format_requires_config(self):
         with patch("sys.argv", ["hoyo-cli", "format"]):
             with pytest.raises(SystemExit):
-                _build_parser().parse_args()
+                cli.build_parser().parse_args()
 
 
 # ---------------------------------------------------------------------------
@@ -526,3 +491,16 @@ class TestRunHelpers:
 
     def test_bootstrap_config_target_none(self):
         assert cli._bootstrap_config_target(None) is None
+
+    def test_generate_template_writes_full_valid_v2_yaml(self, tmp_path):
+        import yaml
+
+        from hoyo_assistant.core import setting
+
+        out = tmp_path / "nested" / "config.yaml"
+        cli.generate_template(str(out))
+        assert out.exists()
+        loaded = yaml.safe_load(out.read_text(encoding="utf-8"))
+        assert set(loaded) == {"enable", "cn", "os", "client", "push"}
+        ok, errors = setting.validate_config_file(str(out))
+        assert ok is True, f"Generated template invalid: {errors}"

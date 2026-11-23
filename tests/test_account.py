@@ -58,9 +58,7 @@ async def test_get_account_list_cookie_expired_retry():
             "hoyo_assistant.core.account.login.update_cookie_token",
             AsyncMock(return_value=True),
         ),
-        patch(
-            "hoyo_assistant.core.account.config", {"account": {"cookie": "new_cookie"}}
-        ),
+        patch("hoyo_assistant.core.account.config", {"cn": {"cookie": "new_cookie"}}),
     ):
         mock_get.side_effect = [mock_response_expired, mock_response_success]
 

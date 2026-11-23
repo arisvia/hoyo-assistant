@@ -1,9 +1,4 @@
-"""Tests for hoyo_assistant.runner.single_account and multi_account.
-
-Ponytail: multi_account.py references setting/StatusCode/CookieError/StokenError
-without importing them (source bug). The autouse fixture below injects them into
-the module namespace so tests exercise real logic. Fix the source imports to drop this.
-"""
+"""Tests for hoyo_assistant.runner.single_account and multi_account."""
 
 from __future__ import annotations
 
@@ -26,27 +21,6 @@ from hoyo_assistant.runner import multi_account, single_account
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _patch_multi_missing_imports():
-    """Inject names multi_account.py forgot to import."""
-    saved = {
-        "StatusCode": getattr(multi_account, "StatusCode", None),
-        "CookieError": getattr(multi_account, "CookieError", None),
-        "StokenError": getattr(multi_account, "StokenError", None),
-        "setting": getattr(multi_account, "setting", None),
-    }
-    multi_account.StatusCode = StatusCode
-    multi_account.CookieError = CookieError
-    multi_account.StokenError = StokenError
-    multi_account.setting = setting
-    yield
-    for k, v in saved.items():
-        if v is None:
-            delattr(multi_account, k)
-        else:
-            setattr(multi_account, k, v)
-
-
 @pytest.fixture
 def cfg(mock_config):
     """Replace global config dict contents with mock_config, restore after."""
@@ -54,7 +28,6 @@ def cfg(mock_config):
     config.clear()
     config.update(deepcopy(mock_config))
     config.setdefault("enable", True)
-    config.setdefault("web_activity", {"activities": []})
     yield config
     config.clear()
     config.update(saved)
@@ -151,10 +124,10 @@ class TestInitializeConfig:
 class TestHandleLogin:
     @pytest.mark.asyncio
     async def test_empty_account_with_checkin_calls_login(self, cfg):
-        config["mihoyobbs"]["checkin"] = True
-        config["account"]["stuid"] = ""
-        config["account"]["stoken"] = ""
-        config["account"]["mid"] = ""
+        config["cn"]["bbs"]["enable"] = True
+        config["cn"]["stuid"] = ""
+        config["cn"]["stoken"] = ""
+        config["cn"]["mid"] = ""
         with patch.object(single_account, "login", new=MagicMock()) as login_mod:
             login_mod.login = AsyncMock()
             with patch.object(single_account, "tools") as tools_mod:
@@ -165,13 +138,13 @@ class TestHandleLogin:
                 ):
                     await single_account.handle_login()
         login_mod.login.assert_awaited_once()
-        assert config["account"]["cookie"] == "tidied"
+        assert config["cn"]["cookie"] == "tidied"
 
     @pytest.mark.asyncio
     async def test_filled_account_no_login(self, cfg):
-        config["account"]["stuid"] = "u"
-        config["account"]["stoken"] = "s"
-        config["account"]["mid"] = "m"
+        config["cn"]["stuid"] = "u"
+        config["cn"]["stoken"] = "s"
+        config["cn"]["mid"] = "m"
         with patch.object(single_account, "login", new=MagicMock()) as login_mod:
             login_mod.login = AsyncMock()
             await single_account.handle_login()
@@ -179,10 +152,10 @@ class TestHandleLogin:
 
     @pytest.mark.asyncio
     async def test_empty_account_no_checkin_no_login(self, cfg):
-        config["mihoyobbs"]["checkin"] = False
-        config["account"]["stuid"] = ""
-        config["account"]["stoken"] = ""
-        config["account"]["mid"] = ""
+        config["cn"]["bbs"]["enable"] = False
+        config["cn"]["stuid"] = ""
+        config["cn"]["stoken"] = ""
+        config["cn"]["mid"] = ""
         with patch.object(single_account, "login", new=MagicMock()) as login_mod:
             login_mod.login = AsyncMock()
             with patch.object(single_account, "tools") as tools_mod:
@@ -199,23 +172,23 @@ class TestHandleLogin:
 class TestRunMiyousheTasks:
     @pytest.mark.asyncio
     async def test_checkin_disabled_returns_empty(self, cfg):
-        config["mihoyobbs"]["checkin"] = False
+        config["cn"]["bbs"]["enable"] = False
         msg, stoken_err = await single_account.run_miyoushe_tasks()
         assert msg == ""
         assert stoken_err is False
 
     @pytest.mark.asyncio
     async def test_stoken_error_returns_error(self, cfg):
-        config["mihoyobbs"]["checkin"] = True
-        config["account"]["stoken"] = "StokenError"
+        config["cn"]["bbs"]["enable"] = True
+        config["cn"]["stoken"] = "StokenError"
         msg, stoken_err = await single_account.run_miyoushe_tasks()
         assert stoken_err is True
         assert msg != ""
 
     @pytest.mark.asyncio
     async def test_run_task_success(self, cfg):
-        config["mihoyobbs"]["checkin"] = True
-        config["account"]["stoken"] = "valid"
+        config["cn"]["bbs"]["enable"] = True
+        config["cn"]["stoken"] = "valid"
         fake_bbs = MagicMock()
         fake_bbs.run_task = AsyncMock(return_value="bbs result")
         with patch.object(single_account, "community") as community_mod:
@@ -226,8 +199,8 @@ class TestRunMiyousheTasks:
 
     @pytest.mark.asyncio
     async def test_stoken_error_raised(self, cfg):
-        config["mihoyobbs"]["checkin"] = True
-        config["account"]["stoken"] = "valid"
+        config["cn"]["bbs"]["enable"] = True
+        config["cn"]["stoken"] = "valid"
         fake_bbs = MagicMock()
         fake_bbs.run_task = AsyncMock(side_effect=StokenError("bad"))
         with patch.object(single_account, "community") as community_mod:
@@ -238,8 +211,8 @@ class TestRunMiyousheTasks:
 
     @pytest.mark.asyncio
     async def test_generic_exception_caught(self, cfg):
-        config["mihoyobbs"]["checkin"] = True
-        config["account"]["stoken"] = "valid"
+        config["cn"]["bbs"]["enable"] = True
+        config["cn"]["stoken"] = "valid"
         fake_bbs = MagicMock()
         fake_bbs.run_task = AsyncMock(side_effect=RuntimeError("boom"))
         with patch.object(single_account, "community") as community_mod:
@@ -267,7 +240,7 @@ class TestRunCnSigninTasks:
 
     @pytest.mark.asyncio
     async def test_checkin_enabled_runs_signin(self, cfg):
-        config["games"]["cn"]["genshin"]["checkin"] = True
+        config["cn"]["games"] = ["genshin"]
         with patch.object(single_account, "chinese") as chinese_mod:
             chinese_mod.run_signin_task = AsyncMock(return_value="signin ok")
             chinese_mod.run_cloud_task = AsyncMock()
@@ -277,7 +250,7 @@ class TestRunCnSigninTasks:
 
     @pytest.mark.asyncio
     async def test_cloud_enabled_runs_cloud(self, cfg):
-        config["cloud_games"]["cn"]["genshin"]["token"] = "some_token"
+        config["cn"]["cloud"]["genshin"] = "some_token"
         with patch.object(single_account, "chinese") as chinese_mod:
             chinese_mod.run_signin_task = AsyncMock()
             chinese_mod.run_cloud_task = AsyncMock(return_value="cloud ok")
@@ -287,14 +260,31 @@ class TestRunCnSigninTasks:
 
     @pytest.mark.asyncio
     async def test_both_enabled_both_run(self, cfg):
-        config["games"]["cn"]["genshin"]["checkin"] = True
-        config["cloud_games"]["cn"]["zzz"]["token"] = "some_token"
+        config["cn"]["games"] = ["genshin"]
+        config["cn"]["cloud"]["zzz"] = "some_token"
         with patch.object(single_account, "chinese") as chinese_mod:
             chinese_mod.run_signin_task = AsyncMock(return_value="signin")
             chinese_mod.run_cloud_task = AsyncMock(return_value="cloud")
             result = await single_account.run_cn_signin_tasks()
         assert "signin" in result
         assert "cloud" in result
+
+    @pytest.mark.asyncio
+    async def test_custom_cn_game_enabled_runs_signin(self, cfg):
+        config["cn"]["custom_games"] = {
+            "planet": {
+                "enable": True,
+                "name": "星布谷地",
+                "game_biz": "hyg_cn",
+                "act_id": "e20261204000001",
+            }
+        }
+        with patch.object(single_account, "chinese") as chinese_mod:
+            chinese_mod.run_signin_task = AsyncMock(return_value="custom cn ok")
+            chinese_mod.run_cloud_task = AsyncMock()
+            result = await single_account.run_cn_signin_tasks()
+        assert "custom cn ok" in result
+        chinese_mod.run_signin_task.assert_awaited_once()
 
 
 # ===========================================================================
@@ -314,8 +304,8 @@ class TestRunOsSigninTasks:
 
     @pytest.mark.asyncio
     async def test_cookie_and_checkin_runs_signin(self, cfg):
-        config["games"]["os"]["cookie"] = "os_cookie"
-        config["games"]["os"]["genshin"]["checkin"] = True
+        config["os"]["cookie"] = "os_cookie"
+        config["os"]["games"] = ["genshin"]
         with patch.object(single_account, "overseas") as overseas_mod:
             overseas_mod.run_signin_task = AsyncMock(return_value="os signin")
             overseas_mod.run_cloud_task = AsyncMock()
@@ -324,8 +314,25 @@ class TestRunOsSigninTasks:
         overseas_mod.run_signin_task.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_custom_os_game_enabled_runs_signin(self, cfg):
+        config["os"]["cookie"] = "os_cookie"
+        config["os"]["custom_games"] = {
+            "planet": {
+                "enable": True,
+                "name": "Petit Planet",
+                "act_id": "e20261204000001",
+            }
+        }
+        with patch.object(single_account, "overseas") as overseas_mod:
+            overseas_mod.run_signin_task = AsyncMock(return_value="custom os ok")
+            overseas_mod.run_cloud_task = AsyncMock()
+            result = await single_account.run_os_signin_tasks()
+        assert "custom os ok" in result
+        overseas_mod.run_signin_task.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_cloud_enabled_runs_cloud(self, cfg):
-        config["cloud_games"]["os"]["genshin"]["token"] = "some_token"
+        config["os"]["cloud"]["genshin"] = "some_token"
         with patch.object(single_account, "overseas") as overseas_mod:
             overseas_mod.run_signin_task = AsyncMock()
             overseas_mod.run_cloud_task = AsyncMock(return_value="os cloud")
@@ -334,36 +341,13 @@ class TestRunOsSigninTasks:
 
     @pytest.mark.asyncio
     async def test_empty_signin_result_not_appended(self, cfg):
-        config["games"]["os"]["cookie"] = "os_cookie"
-        config["games"]["os"]["genshin"]["checkin"] = True
+        config["os"]["cookie"] = "os_cookie"
+        config["os"]["games"] = ["genshin"]
         with patch.object(single_account, "overseas") as overseas_mod:
             overseas_mod.run_signin_task = AsyncMock(return_value="")
             overseas_mod.run_cloud_task = AsyncMock()
             result = await single_account.run_os_signin_tasks()
         assert result == ""
-
-
-# ===========================================================================
-# single_account.run_web_activity_tasks
-# ===========================================================================
-
-
-class TestRunWebActivityTasks:
-    @pytest.mark.asyncio
-    async def test_no_activities_noop(self, cfg):
-        config["web_activity"]["activities"] = []
-        with patch.object(single_account, "web") as web_mod:
-            web_mod.run_task = AsyncMock()
-            await single_account.run_web_activity_tasks()
-        web_mod.run_task.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_activities_present_runs_task(self, cfg):
-        config["web_activity"]["activities"] = ["act1"]
-        with patch.object(single_account, "web") as web_mod:
-            web_mod.run_task = AsyncMock()
-            await single_account.run_web_activity_tasks()
-        web_mod.run_task.assert_awaited_once()
 
 
 # ===========================================================================
@@ -381,10 +365,10 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_cookie_error_raised(self, cfg, reset_setting_path):
-        config["account"]["cookie"] = "CookieError"
-        config["account"]["stuid"] = "u"
-        config["account"]["stoken"] = "s"
-        config["account"]["mid"] = "m"
+        config["cn"]["cookie"] = "CookieError"
+        config["cn"]["stuid"] = "u"
+        config["cn"]["stoken"] = "s"
+        config["cn"]["mid"] = "m"
         mock_http = MagicMock()
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
@@ -400,10 +384,10 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_success_path(self, cfg, reset_setting_path):
-        config["account"]["stuid"] = "u"
-        config["account"]["stoken"] = "s"
-        config["account"]["mid"] = "m"
-        config["account"]["cookie"] = "valid"
+        config["cn"]["stuid"] = "u"
+        config["cn"]["stoken"] = "s"
+        config["cn"]["mid"] = "m"
+        config["cn"]["cookie"] = "valid"
         mock_http = MagicMock()
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
@@ -423,10 +407,6 @@ class TestRunOnce:
                 "hoyo_assistant.runner.single_account.run_os_signin_tasks",
                 new=AsyncMock(return_value="os"),
             ),
-            patch(
-                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
-                new=AsyncMock(),
-            ),
             patch("hoyo_assistant.core.request.http", mock_http),
         ):
             code, msg = await single_account.run_once("x.yaml")
@@ -437,10 +417,10 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_stoken_error_propagates(self, cfg, reset_setting_path):
-        config["account"]["stuid"] = "u"
-        config["account"]["stoken"] = "s"
-        config["account"]["mid"] = "m"
-        config["account"]["cookie"] = "valid"
+        config["cn"]["stuid"] = "u"
+        config["cn"]["stoken"] = "s"
+        config["cn"]["mid"] = "m"
+        config["cn"]["cookie"] = "valid"
         mock_http = MagicMock()
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
@@ -460,10 +440,6 @@ class TestRunOnce:
                 "hoyo_assistant.runner.single_account.run_os_signin_tasks",
                 new=AsyncMock(return_value=""),
             ),
-            patch(
-                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
-                new=AsyncMock(),
-            ),
             patch("hoyo_assistant.core.request.http", mock_http),
         ):
             with pytest.raises(StokenError):
@@ -471,10 +447,10 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_captcha_detected(self, cfg, reset_setting_path):
-        config["account"]["stuid"] = "u"
-        config["account"]["stoken"] = "s"
-        config["account"]["mid"] = "m"
-        config["account"]["cookie"] = "valid"
+        config["cn"]["stuid"] = "u"
+        config["cn"]["stoken"] = "s"
+        config["cn"]["mid"] = "m"
+        config["cn"]["cookie"] = "valid"
         mock_http = MagicMock()
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
@@ -495,10 +471,6 @@ class TestRunOnce:
                 "hoyo_assistant.runner.single_account.run_os_signin_tasks",
                 new=AsyncMock(return_value=""),
             ),
-            patch(
-                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
-                new=AsyncMock(),
-            ),
             patch("hoyo_assistant.core.request.http", mock_http),
         ):
             code, msg = await single_account.run_once("x.yaml")
@@ -506,10 +478,10 @@ class TestRunOnce:
 
     @pytest.mark.asyncio
     async def test_task_exception_caught(self, cfg, reset_setting_path):
-        config["account"]["stuid"] = "u"
-        config["account"]["stoken"] = "s"
-        config["account"]["mid"] = "m"
-        config["account"]["cookie"] = "valid"
+        config["cn"]["stuid"] = "u"
+        config["cn"]["stoken"] = "s"
+        config["cn"]["mid"] = "m"
+        config["cn"]["cookie"] = "valid"
         mock_http = MagicMock()
         mock_http.cache = MagicMock()
         mock_http.cache.clear = MagicMock()
@@ -528,10 +500,6 @@ class TestRunOnce:
             patch(
                 "hoyo_assistant.runner.single_account.run_os_signin_tasks",
                 new=AsyncMock(return_value=""),
-            ),
-            patch(
-                "hoyo_assistant.runner.single_account.run_web_activity_tasks",
-                new=AsyncMock(),
             ),
             patch("hoyo_assistant.core.request.http", mock_http),
         ):

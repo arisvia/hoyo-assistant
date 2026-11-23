@@ -1,7 +1,7 @@
 """Tests for hoyo_assistant.core.login module.
 
-Functions like get_uid/get_mid/get_login_ticket read from the global
-`config["account"]["cookie"]`, so tests mock that via `patch`.
+Functions like get_uid/get_mid read from the global
+`config["cn"]["cookie"]`, so tests mock that via `patch`.
 """
 
 from unittest.mock import patch
@@ -9,7 +9,6 @@ from unittest.mock import patch
 import pytest
 
 from hoyo_assistant.core.login import (
-    get_login_ticket,
     get_mid,
     get_stoken_cookie,
     get_uid,
@@ -25,22 +24,8 @@ def _patch_config(
     """Patch the global config dict with the given values."""
     return patch(
         "hoyo_assistant.core.login.config",
-        {"account": {"cookie": cookie, "stoken": stoken, "stuid": stuid, "mid": mid}},
+        {"cn": {"cookie": cookie, "stoken": stoken, "stuid": stuid, "mid": mid}},
     )
-
-
-class TestGetLoginTicket:
-    def test_found(self):
-        with _patch_config("login_ticket=abc123; other=value"):
-            assert get_login_ticket() == "abc123"
-
-    def test_not_found(self):
-        with _patch_config("other=value"):
-            assert get_login_ticket() is None
-
-    def test_empty(self):
-        with _patch_config(""):
-            assert get_login_ticket() is None
 
 
 class TestGetMid:

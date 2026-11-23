@@ -1,7 +1,7 @@
 """Extended tests for hoyo_assistant.core.login async/network functions.
 
 Complements tests/test_login.py (which covers the sync regex helpers:
-get_uid/get_mid/get_login_ticket/require_*/get_stoken_cookie).
+get_uid/get_mid/require_*/get_stoken_cookie).
 """
 
 from unittest.mock import AsyncMock, patch
@@ -17,7 +17,7 @@ from hoyo_assistant.core.error import CookieError, StokenError
 # ---------------------------------------------------------------------------
 def _cfg(cookie="", stoken="", stuid="", mid="", login_ticket=""):
     return {
-        "account": {
+        "cn": {
             "cookie": cookie,
             "stoken": stoken,
             "stuid": stuid,
@@ -48,34 +48,6 @@ def _patch_setting():
         clear_stoken=AsyncMock(),
         save_config=AsyncMock(),
     )
-
-
-# ---------------------------------------------------------------------------
-# get_stoken
-# ---------------------------------------------------------------------------
-class TestGetStoken:
-    @pytest.mark.asyncio
-    async def test_success(self):
-        resp = _mock_resp({"retcode": 0, "data": {"list": [{"token": "stoken_value"}]}})
-        with (
-            patch("hoyo_assistant.core.login.http.get", return_value=resp),
-            _patch_setting(),
-        ):
-            result = await login_mod.get_stoken("ticket123", "100")
-            assert result == "stoken_value"
-
-    @pytest.mark.asyncio
-    async def test_retcode_nonzero_raises_cookie_error(self):
-        resp = _mock_resp({"retcode": -100, "data": None})
-        with (
-            patch("hoyo_assistant.core.login.http.get", return_value=resp),
-            patch(
-                "hoyo_assistant.core.login.setting.clear_cookie", new=AsyncMock()
-            ) as mock_clear,
-        ):
-            with pytest.raises(CookieError):
-                await login_mod.get_stoken("expired_ticket", "100")
-            mock_clear.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -171,18 +143,18 @@ class TestUpdateCookieToken:
         ):
             result = await login_mod.update_cookie_token()
             assert result is True
-            assert "NEW" in login_mod.config["account"]["cookie"]
-            assert "OLD" not in login_mod.config["account"]["cookie"]
+            assert "NEW" in login_mod.config["cn"]["cookie"]
+            assert "OLD" not in login_mod.config["cn"]["cookie"]
             mock_save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_append_cookie_token_when_missing(self):
+    async def test_append_cookie_token_when_missing_v1(self):
         cfg = _cfg(
             stoken="v1_abc",
             stuid="123",
             cookie="account_id=123",  # no cookie_token
         )
-        resp = _mock_resp({"retcode": 0, "data": {"token": {"token": "appended_ct"}}})
+        resp = _mock_resp({"retcode": 0, "data": {"cookie_token": "appended_ct"}})
         with (
             _patch_config(cfg),
             patch("hoyo_assistant.core.login.http.get", return_value=resp),
@@ -192,57 +164,131 @@ class TestUpdateCookieToken:
         ):
             result = await login_mod.update_cookie_token()
             assert result is True
-            assert "cookie_token=appended_ct" in login_mod.config["account"]["cookie"]
+            assert "cookie_token=appended_ct" in login_mod.config["cn"]["cookie"]
             mock_save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_append_path_retcode_nonzero_returns_false(self):
-        cfg = _cfg(stoken="v1_abc", stuid="123", cookie="account_id=123")
-        resp = _mock_resp({"retcode": -100, "data": None})
-        with (
-            _patch_config(cfg),
-            patch("hoyo_assistant.core.login.http.get", return_value=resp),
-            patch(
-                "hoyo_assistant.core.login.setting.clear_stoken", new=AsyncMock()
-            ) as mock_clear,
-            patch("hoyo_assistant.core.login.setting.save_config", new=AsyncMock()),
-        ):
-            result = await login_mod.update_cookie_token()
-            assert result is False
-            mock_clear.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# get_hk4e_token
-# ---------------------------------------------------------------------------
-class TestGetHk4eToken:
-    @pytest.mark.asyncio
-    async def test_success(self):
-        cfg = _cfg(stoken="v2_abc")
-        resp = _mock_resp({"retcode": 0, "data": {"token": "hk4e_tok"}})
+    async def test_refresh_v2_uses_passport_exchange_and_syncs_aliases(self):
+        cfg = _cfg(
+            stoken="v2_abc",
+            stuid="123",
+            mid="mid_1",
+            cookie="account_id_v2=123; account_mid_v2=mid_1; cookie_token=OLD",
+        )
+        cfg["client"] = {
+            "device": {"id": "dev1", "name": "Phone", "model": "M1", "fp": "fp1"}
+        }
+        resp = _mock_resp({"retcode": 0, "data": {"token": {"token": "NEW_V2"}}})
         with (
             _patch_config(cfg),
             patch(
                 "hoyo_assistant.core.login.http.post", return_value=resp
             ) as mock_post,
+            patch(
+                "hoyo_assistant.core.login.setting.save_config", new=AsyncMock()
+            ) as mock_save,
         ):
-            result = await login_mod.get_hk4e_token("90001", "cn_gf01")
-            assert result == "hk4e_tok"
+            result = await login_mod.update_cookie_token()
+            assert result is True
+            cookie = login_mod.config["cn"]["cookie"]
+            assert "cookie_token_v2=NEW_V2" in cookie
+            assert "cookie_token=NEW_V2" in cookie
+            assert "OLD" not in cookie
+            mock_post.assert_awaited_once()
             _, kwargs = mock_post.call_args
-            assert kwargs["json"]["uid"] == "90001"
-            assert kwargs["json"]["region"] == "cn_gf01"
-            assert kwargs["json"]["stoken"] == "v2_abc"
+            assert kwargs["headers"]["x-rpc-device_fp"] == "fp1"
+            mock_save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_retcode_nonzero_raises_cookie_error(self):
-        cfg = _cfg(stoken="v2_abc")
-        resp = _mock_resp({"retcode": -100, "data": None})
+    async def test_v2_exchange_retcode_expired_clears_stoken(self):
+        cfg = _cfg(stoken="v2_abc", stuid="123", mid="mid_1", cookie="account_id=123")
+        resp = _mock_resp({"retcode": -100, "message": "expired", "data": None})
         with (
             _patch_config(cfg),
             patch("hoyo_assistant.core.login.http.post", return_value=resp),
+            patch(
+                "hoyo_assistant.core.login.setting.clear_stoken", new=AsyncMock()
+            ) as mock_clear,
+            patch("hoyo_assistant.core.login.setting.save_config", new=AsyncMock()),
         ):
-            with pytest.raises(CookieError):
-                await login_mod.get_hk4e_token("90001", "cn_gf01")
+            with pytest.raises(StokenError):
+                await login_mod.update_cookie_token()
+            mock_clear.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_v2_exchange_missing_token_raises_cookie_error(self):
+        cfg = _cfg(stoken="v2_abc", stuid="123", mid="mid_1", cookie="account_id=123")
+        resp = _mock_resp({"retcode": 0, "data": {"token": {}}})
+        with (
+            _patch_config(cfg),
+            patch("hoyo_assistant.core.login.http.post", return_value=resp),
+            pytest.raises(CookieError),
+        ):
+            await login_mod.exchange_token_by_stoken(4)
+
+    @pytest.mark.asyncio
+    async def test_v2_exchange_other_retcode_raises_cookie_error(self):
+        cfg = _cfg(stoken="v2_abc", stuid="123", mid="mid_1", cookie="account_id=123")
+        resp = _mock_resp({"retcode": -500, "message": "server busy", "data": None})
+        with (
+            _patch_config(cfg),
+            patch("hoyo_assistant.core.login.http.post", return_value=resp),
+            pytest.raises(CookieError),
+        ):
+            await login_mod.exchange_token_by_stoken(2)
+
+
+# ---------------------------------------------------------------------------
+# Cookie parse / format / alias sync / build_account_cookie
+# ---------------------------------------------------------------------------
+class TestCookieHelpers:
+    def test_parse_format_and_sync_aliases(self):
+        raw = "ltoken_v2=L2; ltuid_v2=100; cookie_token_v2=C2; ltoken=OLD; badpart;"
+        fields = login_mod.parse_cookie(raw)
+        assert "badpart" not in fields
+        changed = login_mod.sync_cookie_aliases(fields)
+        assert changed is True
+        assert fields["ltoken"] == "L2"
+        assert fields["ltuid"] == "100"
+        assert fields["cookie_token"] == "C2"
+        formatted = login_mod.format_cookie(fields)
+        assert "ltoken=L2;" in formatted
+        assert "cookie_token_v2=C2;" in formatted
+        assert login_mod.format_cookie({}) == ""
+
+    @pytest.mark.asyncio
+    async def test_build_account_cookie_fills_missing_v2_tokens(self):
+        cfg = _cfg(
+            cookie="account_id_v2=123; account_mid_v2=mid1",
+            stoken="v2_abc",
+            stuid="123",
+            mid="mid1",
+        )
+        lt_resp = _mock_resp({"retcode": 0, "data": {"token": {"token": "LT_V2"}}})
+        ct_resp = _mock_resp({"retcode": 0, "data": {"token": {"token": "CT_V2"}}})
+        with (
+            _patch_config(cfg),
+            patch(
+                "hoyo_assistant.core.login.http.post",
+                side_effect=[lt_resp, ct_resp],
+            ) as mock_post,
+            patch(
+                "hoyo_assistant.core.login.setting.save_config", new=AsyncMock()
+            ) as mock_save,
+        ):
+            result = await login_mod.build_account_cookie()
+            assert "ltoken_v2=LT_V2" in result
+            assert "ltoken=LT_V2" in result
+            assert "cookie_token_v2=CT_V2" in result
+            assert "cookie_token=CT_V2" in result
+            assert mock_post.await_count == 2
+            mock_save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_build_account_cookie_empty_raises(self):
+        cfg = _cfg(cookie="", stoken="v2_abc", stuid="123", mid="mid1")
+        with _patch_config(cfg), pytest.raises(CookieError):
+            await login_mod.build_account_cookie()
 
 
 # ---------------------------------------------------------------------------
@@ -283,34 +329,33 @@ class TestLoginOrchestration:
 
     @pytest.mark.asyncio
     async def test_v2_full_flow_success(self):
-        """v2 stoken: require_mid + require_cookie_token, not require_stoken.
-        No cookie refresh (require_stoken is False for v2)."""
+        """v2 stoken: extracts stuid + mid and exchanges missing ltoken_v2/cookie_token_v2 via Passport V2."""
         cfg = _cfg(
             cookie="account_id_v2=123; account_mid_v2=mid1",
             stoken="v2_abc",
             stuid="",
             mid="",
         )
-        # get_token_by_stoken resp for cookie_token fetch
+        lt_resp = _mock_resp({"retcode": 0, "data": {"token": {"token": "lt_v2"}}})
         ct_resp = _mock_resp({"retcode": 0, "data": {"token": {"token": "ct_v2"}}})
         with (
             _patch_config(cfg),
             patch(
-                "hoyo_assistant.core.login.http.get", return_value=ct_resp
-            ) as mock_get,
+                "hoyo_assistant.core.login.http.post",
+                side_effect=[lt_resp, ct_resp],
+            ) as mock_post,
             patch(
                 "hoyo_assistant.core.login.setting.save_config", new=AsyncMock()
             ) as mock_save,
         ):
             await login_mod.login()
-            # stuid + mid should be populated
-            assert login_mod.config["account"]["stuid"] == "123"
-            assert login_mod.config["account"]["mid"] == "mid1"
-            # cookie_token appended
-            assert "cookie_token=ct_v2" in login_mod.config["account"]["cookie"]
+            assert login_mod.config["cn"]["stuid"] == "123"
+            assert login_mod.config["cn"]["mid"] == "mid1"
+            assert "cookie_token_v2=ct_v2" in login_mod.config["cn"]["cookie"]
+            assert "cookie_token=ct_v2" in login_mod.config["cn"]["cookie"]
+            assert "ltoken_v2=lt_v2" in login_mod.config["cn"]["cookie"]
             mock_save.assert_awaited()
-            # only the cookie_token GET (no stoken fetch, no refresh for v2)
-            assert mock_get.await_count == 1
+            assert mock_post.await_count == 2
 
     @pytest.mark.asyncio
     async def test_v2_cookie_token_fetch_failure_clears_stoken(self):
@@ -318,10 +363,10 @@ class TestLoginOrchestration:
             cookie="account_id_v2=123; account_mid_v2=mid1",
             stoken="v2_abc",
         )
-        ct_resp = _mock_resp({"retcode": -100, "data": None})
+        ct_resp = _mock_resp({"retcode": -100, "message": "expired", "data": None})
         with (
             _patch_config(cfg),
-            patch("hoyo_assistant.core.login.http.get", return_value=ct_resp),
+            patch("hoyo_assistant.core.login.http.post", return_value=ct_resp),
             patch(
                 "hoyo_assistant.core.login.setting.clear_stoken", new=AsyncMock()
             ) as mock_clear,
@@ -333,15 +378,11 @@ class TestLoginOrchestration:
 
     @pytest.mark.asyncio
     async def test_v1_flow_with_stoken_fetch_and_refresh(self):
-        """v1 stoken: require_stoken True, require_cookie_token False.
-        require_cookie_token() and require_stoken() both True needed for
-        refresh branch — for v1 only require_stoken is True, so no refresh.
-        cookie_token fetch also skipped (require_cookie_token False)."""
+        """v1 stoken verifies via legacy API_BBS_GET_COOKIE_TOKEN."""
         cfg = _cfg(
             cookie="account_id=123; login_ticket=ticket1",
             stoken="v1_abc",
         )
-        # stoken fetch resp
         stoken_resp = _mock_resp({"retcode": 0, "data": {}})
         with (
             _patch_config(cfg),
@@ -351,7 +392,6 @@ class TestLoginOrchestration:
             patch("hoyo_assistant.core.login.setting.save_config", new=AsyncMock()),
         ):
             await login_mod.login()
-            # Only the stoken fetch GET happened
             assert mock_get.await_count == 1
 
     @pytest.mark.asyncio
@@ -405,28 +445,19 @@ class TestV2StokenEdgeCases:
 # ---------------------------------------------------------------------------
 class TestNetworkErrors:
     @pytest.mark.asyncio
-    async def test_get_stoken_http_error_propagates(self):
+    async def test_exchange_token_http_error_propagates(self):
         import aiohttp
 
+        cfg = _cfg(stoken="v2_abc", stuid="123", mid="mid_1")
         with (
+            _patch_config(cfg),
             patch(
-                "hoyo_assistant.core.login.http.get",
+                "hoyo_assistant.core.login.http.post",
                 side_effect=aiohttp.ClientError("network down"),
             ),
             pytest.raises(aiohttp.ClientError),
         ):
-            await login_mod.get_stoken("t", "1")
-
-    @pytest.mark.asyncio
-    async def test_get_hk4e_token_invalid_response_raises(self):
-        cfg = _cfg(stoken="v2_abc")
-        resp = _mock_resp({"unexpected": "shape"})
-        with (
-            _patch_config(cfg),
-            patch("hoyo_assistant.core.login.http.post", return_value=resp),
-        ):
-            with pytest.raises((KeyError, CookieError)):
-                await login_mod.get_hk4e_token("90001", "cn_gf01")
+            await login_mod.exchange_token_by_stoken(4)
 
     @pytest.mark.asyncio
     async def test_update_cookie_token_get_cookie_token_by_stoken_error(self):

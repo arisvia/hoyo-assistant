@@ -23,7 +23,6 @@ from hoyo_assistant.tasks.overseas import (
     cloud_games as os_cloud_games,
     game_signin as os_game_signin,
 )
-from hoyo_assistant.tasks.web import activities
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -251,7 +250,7 @@ class TestGameCheckin:
         with patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config):
             checkin = GameCheckin("hk4e_cn", "genshin", "Genshin", "act_id", "Traveler")
             checkin.set_headers()
-            assert checkin.headers["Cookie"] == mock_config["account"]["cookie"]
+            assert checkin.headers["Cookie"] == mock_config["cn"]["cookie"]
             # UA comes from resolve_user_agent(client.user_agent): custom value
             # "TestUA" gets the miHoYoBBS/{version} suffix appended.
             assert checkin.headers["User-Agent"].startswith("TestUA")
@@ -293,35 +292,6 @@ class TestGameCheckin:
             await checkin.init()
         assert checkin.profiles == []
         assert checkin.checkin_rewards == []
-
-    @pytest.mark.asyncio
-    async def test_get_award_success(self, mock_config):
-        resp = make_response(
-            {
-                "retcode": 0,
-                "data": {"awards": [{"name": "Primogem", "cnt": 100}]},
-            }
-        )
-        http = mock_http(get_return=resp)
-        with (
-            patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
-            patch("hoyo_assistant.tasks.chinese.game_signin.http", http),
-        ):
-            checkin = GameCheckin("hk4e_cn", "genshin", "Genshin", "act_id", "Traveler")
-            result = await checkin.get_award()
-        assert result == [{"name": "Primogem", "cnt": 100}]
-
-    @pytest.mark.asyncio
-    async def test_get_award_failure(self, mock_config):
-        resp = make_response({"retcode": -1})
-        http = mock_http(get_return=resp)
-        with (
-            patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
-            patch("hoyo_assistant.tasks.chinese.game_signin.http", http),
-        ):
-            checkin = GameCheckin("hk4e_cn", "genshin", "Genshin", "act_id", "Traveler")
-            result = await checkin.get_award()
-        assert result == []
 
     @pytest.mark.asyncio
     async def test_get_checkin_rewards_success(self, mock_config):
@@ -457,7 +427,7 @@ class TestGameCheckin:
         rate_resp = make_response({"retcode": 0}, status=429)
         success_resp = make_response({"retcode": 0, "data": {"success": 0}})
         http = mock_http(post_side_effect=[rate_resp, success_resp])
-        mock_config["games"]["cn"]["retries"] = 2
+        mock_config["cn"]["retries"] = 2
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
             patch("hoyo_assistant.tasks.chinese.game_signin.http", http),
@@ -480,7 +450,7 @@ class TestGameCheckin:
         mock_captcha.game_captcha = MagicMock(
             return_value={"validate": "val", "challenge": "new_chall"}
         )
-        mock_config["games"]["cn"]["retries"] = 2
+        mock_config["cn"]["retries"] = 2
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
             patch("hoyo_assistant.tasks.chinese.game_signin.http", http),
@@ -502,7 +472,7 @@ class TestGameCheckin:
         http = mock_http(post_side_effect=[captcha_resp, success_resp])
         mock_captcha = MagicMock()
         mock_captcha.game_captcha = MagicMock(return_value=None)
-        mock_config["games"]["cn"]["retries"] = 2
+        mock_config["cn"]["retries"] = 2
         with (
             patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
             patch("hoyo_assistant.tasks.chinese.game_signin.http", http),
@@ -522,7 +492,7 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_sign_account_blacklisted(self, mock_config):
-        mock_config["games"]["cn"]["genshin"]["black_list"] = ["uid123"]
+        mock_config["cn"]["black_list"]["genshin"] = ["uid123"]
         with patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config):
             checkin = GameCheckin("hk4e_cn", "genshin", "Genshin", "act_id", "Traveler")
             checkin.profiles = [("Player", "uid123", "cn_gf01")]
@@ -681,7 +651,7 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_checkin_game_enabled(self, mock_config):
-        mock_config["games"]["cn"]["genshin"]["checkin"] = True
+        mock_config["cn"]["games"] = ["genshin"]
         mock_instance = MagicMock()
         mock_instance.init = AsyncMock()
         mock_instance.sign_account = AsyncMock(return_value="signed")
@@ -694,7 +664,7 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_checkin_game_no_print_name(self, mock_config):
-        mock_config["games"]["cn"]["genshin"]["checkin"] = True
+        mock_config["cn"]["games"] = ["genshin"]
         mock_instance = MagicMock()
         mock_instance.init = AsyncMock()
         mock_instance.sign_account = AsyncMock(return_value="signed")
@@ -711,7 +681,7 @@ class TestGameCheckin:
 
     @pytest.mark.asyncio
     async def test_run_task_one_enabled(self, mock_config):
-        mock_config["games"]["cn"]["honkai2"]["checkin"] = True
+        mock_config["cn"]["games"] = ["honkai2"]
         mock_instance = MagicMock()
         mock_instance.init = AsyncMock()
         mock_instance.sign_account = AsyncMock(return_value="done")
@@ -770,7 +740,7 @@ class TestMihoyobbs:
     def _make_bbs(self, mock_config, **config_overrides):
         """Create a Mihoyobbs instance with patched dependencies."""
         cfg = mock_config
-        cfg["mihoyobbs"]["checkin_list"] = [2]
+        cfg["cn"]["bbs"]["forums"] = [2]
         mock_login = MagicMock()
         mock_login.get_stoken_cookie = MagicMock(return_value="test_stoken_cookie")
         mock_login.update_cookie_token = AsyncMock(return_value=True)
@@ -880,7 +850,7 @@ class TestMihoyobbs:
         mock_login.update_cookie_token = AsyncMock(return_value=True)
         mock_setting = MagicMock()
         mock_setting.clear_cookie = AsyncMock()
-        mock_config["mihoyobbs"]["checkin_list"] = [2]
+        mock_config["cn"]["bbs"]["forums"] = [2]
         with (
             patch("hoyo_assistant.tasks.community.miyoushe.config", mock_config),
             patch("hoyo_assistant.tasks.community.miyoushe.login", mock_login),
@@ -900,7 +870,7 @@ class TestMihoyobbs:
         mock_login.update_cookie_token = AsyncMock(return_value=False)
         mock_setting = MagicMock()
         mock_setting.clear_cookie = AsyncMock()
-        mock_config["mihoyobbs"]["checkin_list"] = [2]
+        mock_config["cn"]["bbs"]["forums"] = [2]
         with (
             patch("hoyo_assistant.tasks.community.miyoushe.config", mock_config),
             patch("hoyo_assistant.tasks.community.miyoushe.login", mock_login),
@@ -994,7 +964,7 @@ class TestMihoyobbs:
         bbs.today_get_coins = 20
         bbs.today_have_get_coins = 10
         bbs.have_coins = 100
-        bbs.bbs_config["checkin"] = True
+        bbs.bbs_config["enable"] = True
         bbs.signing = AsyncMock()
         result = await bbs.run_task()
         assert "米游社" in result
@@ -1008,7 +978,7 @@ class TestMihoyobbs:
         bbs.today_get_coins = 20
         bbs.today_have_get_coins = 10
         bbs.have_coins = 100
-        bbs.bbs_config["checkin"] = False
+        bbs.bbs_config["enable"] = False
         bbs.signing = AsyncMock()
         result = await bbs.run_task()
         assert "米游社" in result
@@ -1072,65 +1042,6 @@ class TestMihoyobbs:
 
 
 # ---------------------------------------------------------------------------
-# Activities tests (tasks/web/activities.py)
-# ---------------------------------------------------------------------------
-
-
-class TestActivities:
-    @pytest.mark.asyncio
-    async def test_run_task_no_activities(self):
-        config = {"web_activity": {"activities": []}}
-        with patch("hoyo_assistant.tasks.web.activities.config", config):
-            await activities.run_task()
-
-    @pytest.mark.asyncio
-    async def test_run_task_no_config(self):
-        config = {}
-        with patch("hoyo_assistant.tasks.web.activities.config", config):
-            await activities.run_task()
-
-    @pytest.mark.asyncio
-    async def test_run_task_sync_func(self):
-        sync_func = MagicMock()
-        config = {"web_activity": {"activities": ["sync_func"]}}
-        with (
-            patch("hoyo_assistant.tasks.web.activities.config", config),
-            patch.dict(activities.__dict__, {"sync_func": sync_func}),
-        ):
-            await activities.run_task()
-        sync_func.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_run_task_async_func(self):
-        async_func = AsyncMock()
-        config = {"web_activity": {"activities": ["async_func"]}}
-        with (
-            patch("hoyo_assistant.tasks.web.activities.config", config),
-            patch.dict(activities.__dict__, {"async_func": async_func}),
-        ):
-            await activities.run_task()
-        async_func.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_run_task_not_found(self):
-        config = {"web_activity": {"activities": ["nonexistent_func"]}}
-        with patch("hoyo_assistant.tasks.web.activities.config", config):
-            await activities.run_task()
-
-    @pytest.mark.asyncio
-    async def test_run_task_exception(self):
-        def bad_func():
-            raise ValueError("test error")
-
-        config = {"web_activity": {"activities": ["bad_func"]}}
-        with (
-            patch("hoyo_assistant.tasks.web.activities.config", config),
-            patch.dict(activities.__dict__, {"bad_func": bad_func}),
-        ):
-            await activities.run_task()
-
-
-# ---------------------------------------------------------------------------
 # CN CloudGames tests (tasks/chinese/cloud_games.py)
 # ---------------------------------------------------------------------------
 
@@ -1138,7 +1049,7 @@ class TestActivities:
 class TestCNCloudGames:
     @pytest.mark.asyncio
     async def test_clear_cookie(self, mock_config):
-        mock_config["cloud_games"]["cn"]["genshin"]["token"] = "old_token"
+        mock_config["cn"]["cloud"]["genshin"] = "old_token"
         mock_setting = MagicMock()
         mock_setting.save_config = AsyncMock()
         with (
@@ -1146,7 +1057,7 @@ class TestCNCloudGames:
             patch("hoyo_assistant.tasks.chinese.cloud_games.setting", mock_setting),
         ):
             await cn_cloud_games.clear_cookie("genshin")
-        assert mock_config["cloud_games"]["cn"]["genshin"]["token"] == ""
+        assert mock_config["cn"]["cloud"]["genshin"] == ""
         mock_setting.save_config.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -1174,8 +1085,8 @@ class TestCNCloudGames:
 
     @pytest.mark.asyncio
     async def test_run_task_with_token(self, mock_config):
-        mock_config["cloud_games"]["cn"]["genshin"]["token"] = "test_token"
-        mock_config["cloud_games"]["cn"]["zzz"]["token"] = "test_token2"
+        mock_config["cn"]["cloud"]["genshin"] = "test_token"
+        mock_config["cn"]["cloud"]["zzz"] = "test_token2"
         with (
             patch.object(
                 BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
@@ -1193,8 +1104,8 @@ class TestCNCloudGames:
 
     @pytest.mark.asyncio
     async def test_run_task_partial_token(self, mock_config):
-        mock_config["cloud_games"]["cn"]["genshin"]["token"] = "test_token"
-        mock_config["cloud_games"]["cn"]["zzz"]["token"] = ""
+        mock_config["cn"]["cloud"]["genshin"] = "test_token"
+        mock_config["cn"]["cloud"]["zzz"] = ""
         with (
             patch.object(
                 BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
@@ -1213,7 +1124,7 @@ class TestCNCloudGames:
 class TestOSCloudGames:
     @pytest.mark.asyncio
     async def test_clear_cookie(self, mock_config):
-        mock_config["cloud_games"]["os"]["genshin"]["token"] = "old_token"
+        mock_config["os"]["cloud"]["genshin"] = "old_token"
         mock_setting = MagicMock()
         mock_setting.save_config = AsyncMock()
         with (
@@ -1221,7 +1132,7 @@ class TestOSCloudGames:
             patch("hoyo_assistant.tasks.overseas.cloud_games.setting", mock_setting),
         ):
             await os_cloud_games.clear_cookie("genshin")
-        assert mock_config["cloud_games"]["os"]["genshin"]["token"] == ""
+        assert mock_config["os"]["cloud"]["genshin"] == ""
         mock_setting.save_config.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -1244,9 +1155,9 @@ class TestOSCloudGames:
 
     @pytest.mark.asyncio
     async def test_run_task_with_token(self, mock_config):
-        mock_config["cloud_games"]["os"]["genshin"]["token"] = "test_token"
-        mock_config["cloud_games"]["os"]["zzz"]["token"] = "test_token2"
-        mock_config["cloud_games"]["os"]["lang"] = "en-us"
+        mock_config["os"]["cloud"]["genshin"] = "test_token"
+        mock_config["os"]["cloud"]["zzz"] = "test_token2"
+        mock_config["os"]["lang"] = "en-us"
         with (
             patch.object(
                 BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
@@ -1264,8 +1175,8 @@ class TestOSCloudGames:
 
     @pytest.mark.asyncio
     async def test_run_task_partial_token(self, mock_config):
-        mock_config["cloud_games"]["os"]["genshin"]["token"] = "test_token"
-        mock_config["cloud_games"]["os"]["zzz"]["token"] = ""
+        mock_config["os"]["cloud"]["genshin"] = "test_token"
+        mock_config["os"]["cloud"]["zzz"] = ""
         with (
             patch.object(
                 BaseCloudGame, "check_in", new=AsyncMock(return_value="result")
@@ -1285,16 +1196,11 @@ class TestOSGameSignin:
     @pytest.fixture
     def os_config(self):
         return {
-            "games": {
-                "os": {
-                    "cookie": "ltoken=xyz; ltuid=123",
-                    "lang": "en-us",
-                    "genshin": {"checkin": True},
-                    "honkai_sr": {"checkin": False},
-                    "honkai3rd": {"checkin": False},
-                    "tears_of_themis": {"checkin": False},
-                    "zzz": {"checkin": False},
-                }
+            "os": {
+                "cookie": "ltoken=xyz; ltuid=123",
+                "lang": "en-us",
+                "games": ["genshin"],
+                "custom_games": {},
             }
         }
 
@@ -1461,17 +1367,400 @@ class TestOSGameSignin:
 
     @pytest.mark.asyncio
     async def test_run_task(self, os_config):
-        os_config["games"]["os"]["genshin"]["checkin"] = True
-        os_config["games"]["os"]["honkai_sr"]["checkin"] = True
-        os_config["games"]["os"]["honkai3rd"]["checkin"] = True
-        os_config["games"]["os"]["tears_of_themis"]["checkin"] = True
-        os_config["games"]["os"]["zzz"]["checkin"] = True
+        os_config["os"]["games"] = [
+            "genshin",
+            "honkai_sr",
+            "honkai3rd",
+            "tears_of_themis",
+            "zzz",
+        ]
 
+        mock_checkin = AsyncMock(return_value="checked")
         with (
             patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
-            patch.object(
-                os_game_signin, "hoyo_checkin", AsyncMock(return_value="checked")
-            ),
+            patch.object(os_game_signin, "hoyo_checkin", mock_checkin),
         ):
             res = await os_game_signin.run_task()
         assert "checked" in res
+        # Verify Tears of Themis uses Luna OS endpoint (not Genshin's /event/sol)
+        tot_call = next(
+            c
+            for c in mock_checkin.call_args_list
+            if c.args[1] == os_game_signin.ACT_ID_OS_TEARS_OF_THEMIS
+        )
+        assert tot_call.args[0] == os_game_signin.API_OS_ACT_LUNA
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_invalid_cookie_response(self, os_config):
+        info_resp = make_response(
+            {"retcode": -100, "message": "Not logged in", "data": None}
+        )
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                AsyncMock(return_value=info_resp),
+            ),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                os_game_signin.API_OS_ACT, os_game_signin.ACT_ID_OS_GENSHIN, "Genshin"
+            )
+        assert "Not logged in" in res
+
+    @pytest.mark.asyncio
+    async def test_hoyo_checkin_day1_picks_first_reward(self, os_config):
+        info_resp = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "is_sign": False,
+                    "first_bind": False,
+                    "total_sign_day": 0,
+                    "today": "2026-11-01",
+                },
+            }
+        )
+        award_resp = make_response(
+            {
+                "data": {
+                    "awards": [
+                        {"name": "Day1Item", "cnt": 3},
+                        {"name": "Day30Item", "cnt": 999},
+                    ]
+                }
+            }
+        )
+        sign_resp = make_response({"retcode": 0, "data": {"code": "ok"}})
+
+        async def fake_get(url, **kwargs):
+            return info_resp if "/info" in url else award_resp
+
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", os_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.get",
+                side_effect=fake_get,
+            ),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.http.post",
+                AsyncMock(return_value=sign_resp),
+            ),
+        ):
+            res = await os_game_signin.hoyo_checkin(
+                os_game_signin.API_OS_ACT, os_game_signin.ACT_ID_OS_GENSHIN, "Genshin"
+            )
+        assert "Day1Item" in res
+        assert "Day30Item" not in res
+
+
+class TestAPIRegressionFixes:
+    def test_cn_game_ds_and_subclass_headers_preserved(self, mock_config):
+        mock_config["cn"]["cookie"] = "account_id=123; cookie_token=old"
+        with patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config):
+            genshin = Genshin()
+            assert genshin.headers["DS"] != ""
+            assert genshin.headers["x-rpc-signgame"] == "hk4e"
+            assert genshin.headers["Origin"] == "https://act.mihoyo.com"
+            # Re-calling set_headers() (as on cookie refresh) must keep subclass headers
+            genshin.set_headers()
+            assert genshin.headers["x-rpc-signgame"] == "hk4e"
+            assert genshin.headers["Origin"] == "https://act.mihoyo.com"
+
+            hsr = Honkaisr()
+            assert hsr.headers["x-rpc-signgame"] == "hkrpg"
+
+            tot = TearsOfThemis()
+            assert "&act_id=" in tot.headers["Referer"]
+            assert tot.headers["x-rpc-signgame"] == "nxx"
+
+    @pytest.mark.asyncio
+    async def test_cn_zzz_uses_zzz_endpoints(self, mock_config):
+        from hoyo_assistant.core.constants import (
+            API_ZZZ_GAME_CHECKIN_REWARDS,
+            API_ZZZ_GAME_IS_SIGN,
+        )
+
+        rewards_resp = make_response({"retcode": 0, "data": {"awards": []}})
+        is_sign_resp = make_response(
+            {"retcode": 0, "data": {"is_sign": True, "total_sign_day": 1}}
+        )
+        http = mock_http(get_side_effect=[rewards_resp, is_sign_resp])
+        with (
+            patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
+            patch("hoyo_assistant.tasks.chinese.game_signin.http", http),
+        ):
+            zzz = ZZZ()
+            await zzz.get_checkin_rewards()
+            await zzz.is_sign("prod_gf_cn", "10001")
+        assert http.get.call_args_list[0].args[0] == API_ZZZ_GAME_CHECKIN_REWARDS
+        assert http.get.call_args_list[1].kwargs["url"] == API_ZZZ_GAME_IS_SIGN
+
+    @pytest.mark.asyncio
+    async def test_cn_day1_and_empty_rewards_safe(self, mock_config):
+        with patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config):
+            checkin = GameCheckin("hk4e_cn", "genshin", "Genshin", "act_id", "Traveler")
+            checkin.profiles = [("Player", "uid123", "cn_gf01")]
+            checkin.checkin_rewards = [
+                {"name": "Day1", "cnt": 1},
+                {"name": "Day2", "cnt": 2},
+            ]
+            checkin.is_sign = AsyncMock(
+                return_value={
+                    "is_sign": False,
+                    "total_sign_day": 1,
+                    "first_bind": False,
+                }
+            )
+            checkin.check_in = AsyncMock(
+                return_value=make_response({"retcode": 0, "data": {"success": 0}})
+            )
+            res = await checkin.sign_account()
+            assert "Day2" in res
+
+            # Empty rewards should not raise IndexError
+            checkin.checkin_rewards = []
+            res_empty = await checkin.sign_account()
+            assert "Player" in res_empty
+
+    def test_cn_cloud_games_hostnames_have_no_scheme(self):
+        for game in cn_cloud_games.CLOUD_GAMES:
+            assert game.hostname is not None
+            assert "://" not in game.hostname
+        headers = cn_cloud_games._build_headers(
+            "tok", "hk4e_cn", "https://api-cloudgame.mihoyo.com"
+        )
+        assert headers["Host"] == "api-cloudgame.mihoyo.com"
+
+    @pytest.mark.asyncio
+    async def test_cloud_game_bypasses_cache_and_updates_free_time(self):
+        first = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "300", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
+        second = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "free_time": {"free_time": "315", "send_freetime": "0"},
+                    "play_card": {"short_msg": "active"},
+                    "coin": {"coin_num": "50"},
+                },
+            }
+        )
+        http = mock_http(get_side_effect=[first, second])
+        with patch("hoyo_assistant.tasks.base.http", http):
+            game = BaseCloudGame("genshin", "http://api", "coin", AsyncMock(), {})
+            result = await game.check_in(retry_on_limit=True)
+        for call in http.get.call_args_list:
+            assert call.kwargs.get("use_cache") is False
+        assert "15" in result
+        assert "5" in result  # 315 mins = 5 hours 15 mins
+
+    @pytest.mark.asyncio
+    async def test_miyoushe_null_states_does_not_crash(self, mock_config):
+        mock_config["cn"]["stuid"] = "123"
+        mock_config["cn"]["stoken"] = "v1_tok"
+        resp = make_response(
+            {
+                "retcode": 0,
+                "message": "OK",
+                "data": {
+                    "can_get_points": 50,
+                    "already_received_points": 0,
+                    "total_points": 100,
+                    "states": None,
+                },
+            }
+        )
+        http = mock_http(get_return=resp)
+        with (
+            patch("hoyo_assistant.tasks.community.miyoushe.config", mock_config),
+            patch("hoyo_assistant.tasks.community.miyoushe.http", http),
+            patch(
+                "hoyo_assistant.tasks.community.miyoushe.login.get_stoken_cookie",
+                return_value="stuid=123;stoken=v1_tok",
+            ),
+        ):
+            bbs = Mihoyobbs()
+            await bbs.get_tasks_list()
+        assert bbs.today_get_coins == 50
+
+
+class TestNewGameSyncAndCustomCheckin:
+    @pytest.mark.asyncio
+    async def test_fetch_bbs_game_list_success(self):
+        from hoyo_assistant.tasks.community.miyoushe import fetch_bbs_game_list
+
+        resp = make_response(
+            {
+                "retcode": 0,
+                "data": {
+                    "list": [
+                        {
+                            "id": 10,
+                            "name": "星布谷地",
+                            "en_name": "planet",
+                            "op_name": "hyg",
+                        },
+                        {
+                            "id": 9,
+                            "name": "崩坏：因缘精灵",
+                            "en_name": "hna",
+                            "op_name": "abc",
+                        },
+                    ]
+                },
+            }
+        )
+        http = mock_http(get_return=resp)
+        with patch("hoyo_assistant.tasks.community.miyoushe.http", http):
+            games = await fetch_bbs_game_list()
+        assert games[10]["name"] == "星布谷地"
+        assert games[10]["op_name"] == "hyg"
+        assert games[9]["en_name"] == "hna"
+
+    @pytest.mark.asyncio
+    async def test_fetch_bbs_game_list_error_returns_empty(self):
+        from hoyo_assistant.tasks.community.miyoushe import fetch_bbs_game_list
+
+        http = mock_http(get_side_effect=RuntimeError("offline"))
+        with patch("hoyo_assistant.tasks.community.miyoushe.http", http):
+            assert await fetch_bbs_game_list() == {}
+
+    @pytest.mark.asyncio
+    async def test_miyoushe_sync_unknown_forums(self, mock_config):
+        mock_config["cn"]["bbs"]["forums"] = [2, 11, 999]
+        mock_config["cn"]["stuid"] = "123"
+        mock_config["cn"]["stoken"] = "v1_tok"
+        remote = {
+            11: {
+                "id": "11",
+                "name": "新游戏社区",
+                "en_name": "newgame",
+                "op_name": "ng",
+            }
+        }
+        with (
+            patch("hoyo_assistant.tasks.community.miyoushe.config", mock_config),
+            patch(
+                "hoyo_assistant.tasks.community.miyoushe.login.get_stoken_cookie",
+                return_value="stuid=123;stoken=v1_tok",
+            ),
+            patch(
+                "hoyo_assistant.tasks.community.miyoushe.fetch_bbs_game_list",
+                new=AsyncMock(return_value=remote),
+            ),
+        ):
+            bbs = Mihoyobbs()
+            assert [f["id"] for f in bbs.bbs_list] == ["2"]
+            await bbs.sync_unknown_forums()
+            assert [f["id"] for f in bbs.bbs_list] == ["2", "11"]
+            assert bbs.bbs_list[1]["name"] == "新游戏社区"
+
+    @pytest.mark.asyncio
+    async def test_custom_cn_game_checkin_headers_apis_and_blacklist(self, mock_config):
+        from hoyo_assistant.tasks.chinese.game_signin import CustomCNGameCheckin
+
+        spec = {
+            "enable": True,
+            "name": "星布谷地",
+            "game_biz": "hyg_cn",
+            "act_id": "e20261204000001",
+            "signgame": "planet",
+            "api_base": "https://api-takumi.mihoyo.com/event/luna/hyg/",
+            "origin": "https://act.mihoyo.com",
+            "referer": "https://act.mihoyo.com/",
+            "player_name": "旅居者",
+            "black_list": ["10001"],
+        }
+        mock_config["cn"]["custom_games"] = {"planet": spec}
+        with patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config):
+            game = CustomCNGameCheckin("planet", spec)
+            assert game.game_id == "hyg_cn"
+            assert game.act_id == "e20261204000001"
+            assert game.headers["x-rpc-signgame"] == "planet"
+            assert game.headers["Origin"] == "https://act.mihoyo.com"
+            assert game.headers["Referer"] == "https://act.mihoyo.com/"
+            assert (
+                game.rewards_api
+                == "https://api-takumi.mihoyo.com/event/luna/hyg/home?lang=zh-cn"
+            )
+            assert (
+                game.is_sign_api
+                == "https://api-takumi.mihoyo.com/event/luna/hyg/info?lang=zh-cn"
+            )
+            assert game.sign_api == "https://api-takumi.mihoyo.com/event/luna/hyg/sign"
+            assert game._get_black_list() == ["10001"]
+
+    @pytest.mark.asyncio
+    async def test_cn_run_task_executes_custom_games(self, mock_config):
+        from hoyo_assistant.tasks.chinese import game_signin as cn_mod
+
+        mock_config["cn"]["custom_games"] = {
+            "planet": {
+                "enable": True,
+                "name": "星布谷地",
+                "game_biz": "hyg_cn",
+                "act_id": "e20261204000001",
+            },
+            "disabled_game": {
+                "enable": False,
+                "name": "Ignored",
+                "game_biz": "abc_cn",
+                "act_id": "e0",
+            },
+        }
+        fake_instance = MagicMock()
+        fake_instance.init = AsyncMock()
+        fake_instance.sign_account = AsyncMock(return_value="planet ok")
+        with (
+            patch("hoyo_assistant.tasks.chinese.game_signin.config", mock_config),
+            patch(
+                "hoyo_assistant.tasks.chinese.game_signin.asyncio.sleep",
+                new=AsyncMock(),
+            ),
+            patch(
+                "hoyo_assistant.tasks.chinese.game_signin.CustomCNGameCheckin",
+                return_value=fake_instance,
+            ) as mock_cls,
+        ):
+            res = await cn_mod.run_task()
+        assert "planet ok" in res
+        mock_cls.assert_called_once_with(
+            "planet", mock_config["cn"]["custom_games"]["planet"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_os_run_task_executes_custom_games_with_signgame(self, mock_config):
+        from hoyo_assistant.tasks.overseas import game_signin as os_mod
+
+        mock_config["os"]["cookie"] = "ltuid_v2=1; ltoken_v2=2"
+        mock_config["os"]["custom_games"] = {
+            "planet": {
+                "enable": True,
+                "name": "Petit Planet",
+                "act_id": "e20261204000001",
+                "signgame": "planet",
+            }
+        }
+        with (
+            patch("hoyo_assistant.tasks.overseas.game_signin.config", mock_config),
+            patch(
+                "hoyo_assistant.tasks.overseas.game_signin.hoyo_checkin",
+                new=AsyncMock(return_value="os planet ok"),
+            ) as mock_checkin,
+        ):
+            res = await os_mod.run_task()
+        assert "os planet ok" in res
+        mock_checkin.assert_awaited_once_with(
+            os_mod.API_OS_ACT_LUNA,
+            "e20261204000001",
+            "Petit Planet",
+            signgame="planet",
+        )

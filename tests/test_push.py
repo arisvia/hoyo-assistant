@@ -21,8 +21,13 @@ def _mock_resp(data=None, status=200, text="ok"):
     return resp
 
 
+_TOP_PUSH_KEYS = {"enable", "error_only", "block_keys", "active", "channels"}
+
+
 def _patch_setting_config(push_cfg: dict):
-    """Patch setting.config so PushHandler.get_cfg() returns push_cfg."""
+    """Patch setting.config with a v2 push config dict."""
+    if push_cfg and not any(k in _TOP_PUSH_KEYS for k in push_cfg):
+        push_cfg = {"channels": push_cfg}
     return patch("hoyo_assistant.core.push.setting.config", {"push": push_cfg})
 
 
@@ -61,8 +66,13 @@ class TestPushHandlerInit:
 
     def test_get_cfg_returns_push_dict(self):
         h = PushHandler()
-        with _patch_setting_config({"enable": True, "telegram": {"x": 1}}):
-            assert h.get_cfg() == {"enable": True, "telegram": {"x": 1}}
+        with _patch_setting_config(
+            {"enable": True, "channels": {"telegram": {"bot_token": "t"}}}
+        ):
+            assert h.get_cfg() == {
+                "enable": True,
+                "channels": {"telegram": {"bot_token": "t"}},
+            }
 
     def test_get_cfg_empty_when_no_push_key(self):
         h = PushHandler()
@@ -104,17 +114,17 @@ class TestMsgReplace:
 
     def test_empty_block_keys(self):
         h = PushHandler()
-        with _patch_setting_config({"push_block_keys": ""}):
+        with _patch_setting_config({"block_keys": ""}):
             assert h.msg_replace("hello world") == "hello world"
 
     def test_single_block_key(self):
         h = PushHandler()
-        with _patch_setting_config({"push_block_keys": "secret"}):
+        with _patch_setting_config({"block_keys": "secret"}):
             assert h.msg_replace("my secret value") == "my ****** value"
 
     def test_multiple_block_keys(self):
         h = PushHandler()
-        with _patch_setting_config({"push_block_keys": "foo,bar"}):
+        with _patch_setting_config({"block_keys": "foo,bar"}):
             result = h.msg_replace("foo and bar")
             assert "foo" not in result
             assert "bar" not in result
@@ -122,7 +132,7 @@ class TestMsgReplace:
 
     def test_block_keys_with_whitespace_trimmed(self):
         h = PushHandler()
-        with _patch_setting_config({"push_block_keys": "  spaced  "}):
+        with _patch_setting_config({"block_keys": "  spaced  "}):
             # "spaced" is 6 chars → 6 asterisks
             assert h.msg_replace("a spaced b") == "a ****** b"
 
@@ -292,7 +302,7 @@ class TestCqhttpProvider:
     async def test_qq_and_group_both_set_aborts(self):
         h = PushHandler()
         with (
-            _patch_setting_config({"cqhttp": {"cqhttp_qq": "1", "cqhttp_group": "2"}}),
+            _patch_setting_config({"cqhttp": {"qq": "1", "group": "2"}}),
             patch.object(h, "http") as mock_http,
         ):
             mock_http.post = AsyncMock()
@@ -307,9 +317,9 @@ class TestCqhttpProvider:
             _patch_setting_config(
                 {
                     "cqhttp": {
-                        "cqhttp_qq": "123",
-                        "cqhttp_group": None,
-                        "cqhttp_url": "http://cq/",
+                        "qq": "123",
+                        "group": None,
+                        "url": "http://cq/",
                     }
                 }
             ),
@@ -329,9 +339,9 @@ class TestCqhttpProvider:
             _patch_setting_config(
                 {
                     "cqhttp": {
-                        "cqhttp_qq": None,
-                        "cqhttp_group": "456",
-                        "cqhttp_url": "http://cq/",
+                        "qq": None,
+                        "group": "456",
+                        "url": "http://cq/",
                     }
                 }
             ),
@@ -460,7 +470,7 @@ class TestWebhookProvider:
         h = PushHandler()
         resp = _mock_resp({"errmsg": "ok"})
         with (
-            _patch_setting_config({"webhook": {"webhook_url": "http://wh"}}),
+            _patch_setting_config({"webhook": {"url": "http://wh"}}),
             patch.object(h, "http") as mock_http,
         ):
             mock_http.post = AsyncMock(return_value=resp)
@@ -588,6 +598,111 @@ class TestFeishubotProvider:
             await h.feishubot(0, "msg")
             _, kwargs = mock_http.post.call_args
             assert kwargs["json"]["msg_type"] == "text"
+            assert "sign" not in kwargs["json"]
+
+    @pytest.mark.asyncio
+    async def test_with_secret_adds_timestamp_and_sign(self):
+        h = PushHandler()
+        resp = _mock_resp({"msg": "ok"})
+        with (
+            _patch_setting_config(
+                {"feishubot": {"webhook": "http://fs", "secret": "my_secret"}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(return_value=resp)
+            await h.feishubot(0, "msg")
+            _, kwargs = mock_http.post.call_args
+            assert "timestamp" in kwargs["json"]
+            assert "sign" in kwargs["json"]
+
+
+class TestWxpusherProvider:
+    @pytest.mark.asyncio
+    async def test_sends_post(self):
+        h = PushHandler()
+        resp = _mock_resp({"msg": "ok"})
+        with (
+            _patch_setting_config(
+                {
+                    "wxpusher": {
+                        "app_token": "AT_123",
+                        "uids": "UID_1,UID_2",
+                        "topic_ids": "101, 202",
+                    }
+                }
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(return_value=resp)
+            await h.wxpusher(0, "msg")
+            _, kwargs = mock_http.post.call_args
+            assert kwargs["json"]["appToken"] == "AT_123"
+            assert kwargs["json"]["uids"] == ["UID_1", "UID_2"]
+            assert kwargs["json"]["topicIds"] == [101, 202]
+
+    @pytest.mark.asyncio
+    async def test_missing_config_raises(self):
+        h = PushHandler()
+        with (
+            _patch_setting_config({"wxpusher": {"app_token": ""}}),
+            pytest.raises(ValueError),
+        ):
+            await h.wxpusher(0, "msg")
+
+
+class TestNtfyProvider:
+    @pytest.mark.asyncio
+    async def test_sends_post_with_token(self):
+        h = PushHandler()
+        resp = _mock_resp(status=200)
+        with (
+            _patch_setting_config(
+                {
+                    "ntfy": {
+                        "api_url": "https://ntfy.example.com/",
+                        "topic": "hoyo",
+                        "token": "tk_123",
+                        "priority": "high",
+                    }
+                }
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(return_value=resp)
+            await h.ntfy(0, "msg")
+            _, kwargs = mock_http.post.call_args
+            assert kwargs["url"] == "https://ntfy.example.com/hoyo"
+            assert kwargs["headers"]["Authorization"] == "Bearer tk_123"
+            assert kwargs["headers"]["Priority"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_missing_topic_raises(self):
+        h = PushHandler()
+        with (
+            _patch_setting_config({"ntfy": {"topic": ""}}),
+            pytest.raises(ValueError),
+        ):
+            await h.ntfy(0, "msg")
+
+    @pytest.mark.asyncio
+    async def test_non_ascii_title_rfc2047_encoded(self):
+        h = PushHandler()
+        resp = _mock_resp(status=200)
+        with (
+            _patch_setting_config({"ntfy": {"topic": "hoyo"}}),
+            patch(
+                "hoyo_assistant.core.push.get_push_title",
+                return_value="HoyoAssistant 执行成功",
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(return_value=resp)
+            await h.ntfy(0, "msg")
+            _, kwargs = mock_http.post.call_args
+            sent_title = kwargs["headers"]["Title"]
+            assert sent_title.isascii()
+            assert sent_title.startswith("=?utf-8?b?")
 
 
 class TestDingrobotProvider:
@@ -640,7 +755,7 @@ class TestPushDispatch:
         h = PushHandler()
         with (
             _patch_setting_config(
-                {"enable": True, "error_push_only": True, "active": ["telegram"]}
+                {"enable": True, "error_only": True, "active": ["telegram"]}
             ),
             patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
         ):
@@ -653,7 +768,7 @@ class TestPushDispatch:
         h = PushHandler()
         with (
             _patch_setting_config(
-                {"enable": True, "error_push_only": True, "active": ["telegram"]}
+                {"enable": True, "error_only": True, "active": ["telegram"]}
             ),
             patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
         ):
@@ -706,7 +821,7 @@ class TestPushDispatch:
         h = PushHandler()
         with (
             _patch_setting_config(
-                {"enable": True, "active": ["telegram"], "push_block_keys": "secret"}
+                {"enable": True, "active": ["telegram"], "block_keys": "secret"}
             ),
             patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
         ):
@@ -742,6 +857,30 @@ class TestPushDispatch:
         ):
             result = await h.push(0, "msg")
             assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_active_auto_dispatches_configured_channels(self):
+        h = PushHandler()
+        with (
+            _patch_setting_config(
+                {
+                    "enable": True,
+                    "active": [],
+                    "block_keys": ["secret"],
+                    "channels": {
+                        "telegram": {"bot_token": "B", "chat_id": "1"},
+                        "discord": None,
+                    },
+                }
+            ),
+            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
+            patch.object(h, "discord", new=AsyncMock()) as mock_dc,
+        ):
+            result = await h.push(0, "hello secret")
+            assert result == 0
+            mock_tg.assert_awaited_once()
+            assert "secret" not in mock_tg.call_args[0][1]
+            mock_dc.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -838,6 +977,8 @@ class TestProviderRegistration:
             "qmsg",
             "discord",
             "serverchan3",
+            "wxpusher",
+            "ntfy",
         ],
     )
     def test_provider_exists_on_handler(self, name):
@@ -866,6 +1007,8 @@ class TestProviderRegistration:
             "qmsg",
             "discord",
             "serverchan3",
+            "wxpusher",
+            "ntfy",
         ]
         for name in async_names:
             assert inspect.iscoroutinefunction(getattr(h, name)), (
