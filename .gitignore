@@ -64,9 +64,10 @@ logs/
 *.log
 
 # Local runtime secrets/configs
-config/*.yaml
-config/*.yml
-config/push.ini
+/config.yaml
+/config.yml
+/config.yaml.bak
+/config.yml.bak
 
 # Tool caches
 .ruff_cache/
