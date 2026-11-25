@@ -58,7 +58,10 @@ async def test_get_account_list_cookie_expired_retry():
             "hoyo_assistant.core.account.login.update_cookie_token",
             AsyncMock(return_value=True),
         ),
-        patch("hoyo_assistant.core.account.config", {"cn": {"cookie": "new_cookie"}}),
+        patch(
+            "hoyo_assistant.core.login.setting.get_account",
+            return_value={"cookie": "ltoken_v2=new_cookie;stuid=1;stoken=v2_s;"},
+        ),
     ):
         mock_get.side_effect = [mock_response_expired, mock_response_success]
 
@@ -66,7 +69,9 @@ async def test_get_account_list_cookie_expired_retry():
         accounts = await get_account_list("hk4e_cn", headers)
         assert len(accounts) == 1
         assert accounts[0] == ("Lumine", "100000002", "cn_gf01")
-        assert headers["Cookie"] == "new_cookie"
+        assert "ltoken_v2=new_cookie;" in headers["Cookie"]
+        assert "stoken=" not in headers["Cookie"]
+        assert "stuid=" not in headers["Cookie"]
 
 
 @pytest.mark.asyncio
@@ -86,3 +91,46 @@ async def test_get_account_list_cookie_expired_raise():
         headers = {"Cookie": "old_cookie"}
         with pytest.raises(CookieError):
             await get_account_list("hk4e_cn", headers)
+
+
+@pytest.mark.asyncio
+async def test_get_account_list_persistent_unauthorized_does_not_recurse_infinitely():
+    resp_unauth = AsyncMock()
+    resp_unauth.json = AsyncMock(return_value={"retcode": -100})
+
+    with (
+        patch(
+            "hoyo_assistant.core.account.http.get",
+            new=AsyncMock(return_value=resp_unauth),
+        ) as mock_get,
+        patch(
+            "hoyo_assistant.core.account.login.update_cookie_token",
+            new=AsyncMock(return_value=True),
+        ) as mock_update,
+        patch("hoyo_assistant.core.account.login.get_web_cookie", return_value="new"),
+    ):
+        with pytest.raises(CookieError):
+            await get_account_list("hk4e_cn", {"Cookie": "old"})
+    assert mock_get.await_count == 2
+    mock_update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_account_list_empty_list_skips_cookie_refresh():
+    resp_empty = AsyncMock()
+    resp_empty.json = AsyncMock(return_value={"retcode": 0, "data": {"list": []}})
+
+    with (
+        patch(
+            "hoyo_assistant.core.account.http.get",
+            new=AsyncMock(return_value=resp_empty),
+        ) as mock_get,
+        patch(
+            "hoyo_assistant.core.account.login.update_cookie_token",
+            new=AsyncMock(),
+        ) as mock_update,
+    ):
+        accounts = await get_account_list("bh2_cn", {"Cookie": "ok"})
+    assert accounts == []
+    mock_get.assert_awaited_once()
+    mock_update.assert_not_awaited()

@@ -18,11 +18,19 @@ def test_i18n_translation(monkeypatch):
     en_val = translator_en.t("cli.task.server_help_title")
     assert isinstance(en_val, str)
 
+    monkeypatch.setenv("HOYO_ASSISTANT_LANGUAGE", "zh-CN.UTF-8")
+    translator_norm = I18n()
+    assert translator_norm._current_lang == "zh_CN"
+
+    monkeypatch.setenv("HOYO_ASSISTANT_LANGUAGE", "fr_FR")
+    translator_fallback = I18n()
+    assert translator_fallback._current_lang == "zh_CN"
+
 
 def test_i18n_interpolation():
     translator = I18n()
     # Test formatting with variables if key has them
-    msg = translator.t("cli.task.single_fail", error="TestError")
+    msg = translator.t("cli.task.run_fail", error="TestError")
     assert "TestError" in msg
 
 

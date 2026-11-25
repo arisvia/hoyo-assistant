@@ -22,11 +22,14 @@ def test_core_exports():
 
 
 def test_runners_callable():
-    from hoyo_assistant.runner import multi_account, single_account
+    from hoyo_assistant import run_account, run_accounts
+    from hoyo_assistant.runner import executor
 
-    assert callable(single_account.run_once)
-    assert callable(single_account.run_single_account)
-    assert callable(multi_account.run_multi_account)
+    assert callable(run_account)
+    assert callable(run_accounts)
+    assert callable(executor.handle_cn_login)
+    assert callable(executor.run_account)
+    assert callable(executor.run_accounts)
 
 
 def test_task_modules_callable():
@@ -49,4 +52,6 @@ def test_setting_and_request():
     from hoyo_assistant.core import request, setting
 
     assert hasattr(setting, "load_config")
+    assert hasattr(setting, "get_account")
+    assert hasattr(setting, "set_current_account")
     assert hasattr(request, "http")

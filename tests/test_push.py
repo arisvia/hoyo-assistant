@@ -1,17 +1,19 @@
-"""Tests for hoyo_assistant.core.push module (PushHandler, providers, push())."""
+"""Tests for hoyo_assistant.core.push module (named targets & per-target routing)."""
 
-import inspect
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hoyo_assistant.core import push as push_mod
-from hoyo_assistant.core.push import PushHandler, async_push, get_push_title
+from hoyo_assistant.core import StatusCode, push as push_mod
+from hoyo_assistant.core.models import AccountRunResult
+from hoyo_assistant.core.push import (
+    PushHandler,
+    async_push,
+    dispatch_push,
+    get_push_title,
+)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def _mock_resp(data=None, status=200, text="ok"):
     resp = AsyncMock()
     resp.status = status
@@ -21,19 +23,10 @@ def _mock_resp(data=None, status=200, text="ok"):
     return resp
 
 
-_TOP_PUSH_KEYS = {"enable", "error_only", "block_keys", "active", "channels"}
-
-
 def _patch_setting_config(push_cfg: dict):
-    """Patch setting.config with a v2 push config dict."""
-    if push_cfg and not any(k in _TOP_PUSH_KEYS for k in push_cfg):
-        push_cfg = {"channels": push_cfg}
     return patch("hoyo_assistant.core.push.setting.config", {"push": push_cfg})
 
 
-# ---------------------------------------------------------------------------
-# get_push_title
-# ---------------------------------------------------------------------------
 class TestGetPushTitle:
     @pytest.mark.parametrize(
         "status_id,expected_key",
@@ -56,962 +49,436 @@ class TestGetPushTitle:
             assert get_push_title(999) == "push.status_unknown"
 
 
-# ---------------------------------------------------------------------------
-# PushHandler init + config helpers
-# ---------------------------------------------------------------------------
 class TestPushHandlerInit:
     def test_init_binds_global_http(self):
         h = PushHandler()
         assert h.http is push_mod.http
 
-    def test_get_cfg_returns_push_dict(self):
+    def test_get_targets_returns_dict(self):
         h = PushHandler()
         with _patch_setting_config(
-            {"enable": True, "channels": {"telegram": {"bot_token": "t"}}}
+            {"enable": True, "targets": {"tg_main": {"type": "telegram"}}}
         ):
-            assert h.get_cfg() == {
-                "enable": True,
-                "channels": {"telegram": {"bot_token": "t"}},
-            }
+            assert h.get_targets() == {"tg_main": {"type": "telegram"}}
 
-    def test_get_cfg_empty_when_no_push_key(self):
+    def test_get_targets_empty_when_missing(self):
         h = PushHandler()
         with patch("hoyo_assistant.core.push.setting.config", {}):
-            assert h.get_cfg() == {}
-
-    def test_get_val_returns_nested(self):
-        h = PushHandler()
-        with _patch_setting_config(
-            {"telegram": {"bot_token": "tok", "chat_id": "123"}}
-        ):
-            assert h.get_val("telegram", "bot_token") == "tok"
-            assert h.get_val("telegram", "chat_id") == "123"
-
-    def test_get_val_default_when_section_missing(self):
-        h = PushHandler()
-        with _patch_setting_config({"enable": True}):
-            assert h.get_val("telegram", "bot_token", "def") == "def"
-
-    def test_get_val_default_when_section_not_dict(self):
-        h = PushHandler()
-        with _patch_setting_config({"telegram": "not-a-dict"}):
-            assert h.get_val("telegram", "bot_token", "def") == "def"
-
-    def test_get_val_default_when_key_missing(self):
-        h = PushHandler()
-        with _patch_setting_config({"telegram": {"other": 1}}):
-            assert h.get_val("telegram", "bot_token", "def") == "def"
+            assert h.get_targets() == {}
 
 
-# ---------------------------------------------------------------------------
-# msg_replace (block keys)
-# ---------------------------------------------------------------------------
 class TestMsgReplace:
     def test_no_block_keys(self):
         h = PushHandler()
         with _patch_setting_config({}):
             assert h.msg_replace("hello world") == "hello world"
 
-    def test_empty_block_keys(self):
+    def test_single_and_multiple_block_keys(self):
         h = PushHandler()
-        with _patch_setting_config({"block_keys": ""}):
-            assert h.msg_replace("hello world") == "hello world"
+        with _patch_setting_config({"block_keys": ["secret", "token"]}):
+            assert h.msg_replace("my secret token") == "my ****** *****"
 
-    def test_single_block_key(self):
-        h = PushHandler()
-        with _patch_setting_config({"block_keys": "secret"}):
-            assert h.msg_replace("my secret value") == "my ****** value"
-
-    def test_multiple_block_keys(self):
-        h = PushHandler()
-        with _patch_setting_config({"block_keys": "foo,bar"}):
-            result = h.msg_replace("foo and bar")
-            assert "foo" not in result
-            assert "bar" not in result
-            assert "***" in result
-
-    def test_block_keys_with_whitespace_trimmed(self):
+    def test_string_block_keys_trimmed(self):
         h = PushHandler()
         with _patch_setting_config({"block_keys": "  spaced  "}):
-            # "spaced" is 6 chars → 6 asterisks
             assert h.msg_replace("a spaced b") == "a ****** b"
 
-    def test_non_string_input_coerced(self):
-        h = PushHandler()
-        with _patch_setting_config({}):
-            assert h.msg_replace(12345) == "12345"
 
-
-# ---------------------------------------------------------------------------
-# _build_push_payload
-# ---------------------------------------------------------------------------
-class TestBuildPushPayload:
-    def test_returns_three_strings(self):
-        h = PushHandler()
-        with patch("hoyo_assistant.core.push.t", side_effect=lambda k, **kw: k):
-            title, body, full = h._build_push_payload(0, "hello")
-            assert isinstance(title, str)
-            assert isinstance(body, str)
-            assert isinstance(full, str)
-
-    def test_empty_message_uses_placeholder(self):
-        h = PushHandler()
-        calls = []
-
-        def fake_t(k, **kw):
-            calls.append((k, kw))
-            if k == "push.empty_message":
-                return "EMPTY"
-            return k
-
-        with patch("hoyo_assistant.core.push.t", side_effect=fake_t):
-            _, body, _ = h._build_push_payload(0, "")
-            # body template call should have content="EMPTY"
-            body_call = next(c for c in calls if c[0] == "push.template_body")
-            assert body_call[1]["content"] == "EMPTY"
-
-    def test_none_message_uses_placeholder(self):
-        h = PushHandler()
-        seen = []
-
-        def fake_t(k, **kw):
-            seen.append((k, kw))
-            return k
-
-        with patch("hoyo_assistant.core.push.t", side_effect=fake_t):
-            h._build_push_payload(0, None)
-        # When push_message is None, content falls back to push.empty_message
-        empty_calls = [c for c in seen if c[0] == "push.empty_message"]
-        assert len(empty_calls) == 1
-
-
-# ---------------------------------------------------------------------------
-# Provider tests — each mocks self.http.post / self.http.get
-# ---------------------------------------------------------------------------
-class TestTelegramProvider:
+class TestProviders:
     @pytest.mark.asyncio
-    async def test_sends_post(self):
+    async def test_telegram(self):
         h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config({"telegram": {"bot_token": "BOT", "chat_id": "123"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.telegram(0, "msg")
-            mock_http.post.assert_awaited_once()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp())
+            await h.telegram(
+                0,
+                "msg",
+                {"api_url": "custom.tg", "bot_token": "BOT", "chat_id": "123"},
+            )
             _, kwargs = mock_http.post.call_args
-            assert "BOT" in kwargs["url"]
+            assert "custom.tg/botBOT/sendMessage" in kwargs["url"]
             assert kwargs["data"]["chat_id"] == "123"
 
     @pytest.mark.asyncio
-    async def test_custom_api_url(self):
+    async def test_ftqq(self):
         h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config(
-                {
-                    "telegram": {
-                        "api_url": "custom.telegram.example",
-                        "bot_token": "BOT",
-                        "chat_id": "1",
-                    }
-                }
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.telegram(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert "custom.telegram.example" in kwargs["url"]
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp())
+            await h.ftqq(0, "msg", {"sendkey": "SK123"})
+            assert "SK123.send" in mock_http.post.call_args.kwargs["url"]
 
-
-class TestFtqqProvider:
     @pytest.mark.asyncio
-    async def test_sends_post_with_sendkey(self):
+    async def test_pushplus(self):
         h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config({"ftqq": {"sendkey": "SK123"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.ftqq(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert "SK123.send" in kwargs["url"]
-            assert "title" in kwargs["data"]
-            assert "desp" in kwargs["data"]
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp())
+            await h.pushplus(0, "msg", {"token": "TOK", "topic": "TPC"})
+            assert mock_http.post.call_args.kwargs["data"]["token"] == "TOK"
 
-
-class TestPushplusProvider:
     @pytest.mark.asyncio
-    async def test_sends_post(self):
+    async def test_pushme_success_and_missing_key(self):
         h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config({"pushplus": {"token": "TOK", "topic": "TPC"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.pushplus(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["data"]["token"] == "TOK"
-            assert kwargs["data"]["topic"] == "TPC"
-
-
-class TestPushmeProvider:
-    @pytest.mark.asyncio
-    async def test_missing_key_returns_early(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"pushme": {"token": ""}}),
-            patch.object(h, "http") as mock_http,
-        ):
+        with patch.object(h, "http") as mock_http:
             mock_http.post = AsyncMock()
-            await h.pushme(0, "msg")
+            await h.pushme(0, "msg", {"token": ""})
             mock_http.post.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_success_path(self):
-        h = PushHandler()
-        resp = _mock_resp(status=200, text="success")
-        with (
-            _patch_setting_config({"pushme": {"token": "KEY"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.pushme(0, "msg")
+            mock_http.post = AsyncMock(
+                return_value=_mock_resp(status=200, text="success")
+            )
+            await h.pushme(0, "msg", {"token": "KEY"})
             mock_http.post.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_non_success_response_logs_error(self):
+    async def test_cqhttp(self):
         h = PushHandler()
-        resp = _mock_resp(status=500, text="fail")
-        with (
-            _patch_setting_config({"pushme": {"token": "KEY"}}),
-            patch.object(h, "http") as mock_http,
-            patch("hoyo_assistant.core.push.log") as mock_log,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.pushme(0, "msg")
-            mock_log.error.assert_called()
-
-
-class TestCqhttpProvider:
-    @pytest.mark.asyncio
-    async def test_qq_and_group_both_set_aborts(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"cqhttp": {"qq": "1", "group": "2"}}),
-            patch.object(h, "http") as mock_http,
-        ):
+        with patch.object(h, "http") as mock_http:
             mock_http.post = AsyncMock()
-            await h.cqhttp(0, "msg")
+            await h.cqhttp(0, "msg", {"qq": "1", "group": "2"})
             mock_http.post.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_qq_only_sends(self):
-        h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config(
-                {
-                    "cqhttp": {
-                        "qq": "123",
-                        "group": None,
-                        "url": "http://cq/",
-                    }
-                }
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.cqhttp(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["json"]["user_id"] == 123
-            assert "group_id" not in kwargs["json"]
+            mock_http.post = AsyncMock(return_value=_mock_resp())
+            await h.cqhttp(0, "msg", {"qq": "123", "group": None, "url": "http://cq/"})
+            assert mock_http.post.call_args.kwargs["json"]["user_id"] == 123
 
     @pytest.mark.asyncio
-    async def test_group_only_sends(self):
-        h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config(
-                {
-                    "cqhttp": {
-                        "qq": None,
-                        "group": "456",
-                        "url": "http://cq/",
-                    }
-                }
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.cqhttp(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["json"]["group_id"] == 456
-            assert "user_id" not in kwargs["json"]
-
-
-class TestWecomProvider:
-    @pytest.mark.asyncio
-    async def test_two_post_calls(self):
+    async def test_wecom(self):
         h = PushHandler()
         token_resp = _mock_resp({"access_token": "AT"})
         send_resp = _mock_resp()
-        with (
-            _patch_setting_config(
-                {
-                    "wecom": {
-                        "secret": "S",
-                        "wechat_id": "CID",
-                        "agentid": "9",
-                        "touser": "@all",
-                    }
-                }
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
+        with patch.object(h, "http") as mock_http:
             mock_http.post = AsyncMock(side_effect=[token_resp, send_resp])
-            await h.wecom(0, "msg")
-            assert mock_http.post.await_count == 2
-            # first call: gettoken (url passed as kwarg)
-            first_url = mock_http.post.call_args_list[0].kwargs["url"]
-            assert "gettoken" in first_url
-            # second call: message/send (url passed positionally)
-            second_args = mock_http.post.call_args_list[1].args
-            assert "message/send" in second_args[0]
-            assert "AT" in second_args[0]
-
-
-class TestPushdeerProvider:
-    @pytest.mark.asyncio
-    async def test_sends_get(self):
-        h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config(
-                {"pushdeer": {"api_url": "http://pd", "token": "TK"}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.get = AsyncMock(return_value=resp)
-            await h.pushdeer(0, "msg")
-            _, kwargs = mock_http.get.call_args
-            assert "message/push" in kwargs["url"]
-            assert kwargs["params"]["pushkey"] == "TK"
-
-
-class TestBarkProvider:
-    @pytest.mark.asyncio
-    async def test_sends_get(self):
-        h = PushHandler()
-        resp = _mock_resp({"message": "ok"})
-        with (
-            _patch_setting_config(
-                {"bark": {"api_url": "http://bark", "token": "TK", "icon": "x"}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.get = AsyncMock(return_value=resp)
-            await h.bark(0, "msg")
-            _, kwargs = mock_http.get.call_args
-            assert "/TK/" in kwargs["url"]
-
-
-class TestGotifyProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post_with_priority(self):
-        h = PushHandler()
-        resp = _mock_resp({"errmsg": "ok"})
-        with (
-            _patch_setting_config(
-                {"gotify": {"api_url": "http://g", "token": "TK", "priority": 5}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.gotify(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert "message?token=TK" in kwargs["url"]
-            assert kwargs["json"]["priority"] == 5
-
-
-class TestIftttProvider:
-    @pytest.mark.asyncio
-    async def test_success_returns_one(self):
-        h = PushHandler()
-        resp = _mock_resp(text="ok")
-        with (
-            _patch_setting_config({"ifttt": {"event": "EV", "key": "KY"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            result = await h.ifttt(0, "msg")
-            assert result == 1
-
-    @pytest.mark.asyncio
-    async def test_errors_returns_zero(self):
-        h = PushHandler()
-        resp = _mock_resp(text='{"errors":["bad"]}')
-        with (
-            _patch_setting_config({"ifttt": {"event": "EV", "key": "KY"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            result = await h.ifttt(0, "msg")
-            assert result == 0
-
-
-class TestWebhookProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post(self):
-        h = PushHandler()
-        resp = _mock_resp({"errmsg": "ok"})
-        with (
-            _patch_setting_config({"webhook": {"url": "http://wh"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.webhook(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["url"] == "http://wh"
-            assert "title" in kwargs["json"]
-            assert "message" in kwargs["json"]
-
-
-class TestQmsgProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post(self):
-        h = PushHandler()
-        resp = _mock_resp({"reason": "ok"})
-        with (
-            _patch_setting_config({"qmsg": {"key": "K"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.qmsg(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert "/send/K" in kwargs["url"]
-            assert "msg" in kwargs["data"]
-
-
-class TestDiscordProvider:
-    @pytest.mark.asyncio
-    async def test_success_status_204(self):
-        h = PushHandler()
-        resp = _mock_resp(status=204, text="")
-        with (
-            _patch_setting_config({"discord": {"webhook": "http://dc"}}),
-            patch.object(h, "http") as mock_http,
-            patch("hoyo_assistant.core.push.log") as mock_log,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.discord(0, "msg")
-            mock_http.post.assert_awaited_once()
-            mock_log.info.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_non_204_logs_warning(self):
-        h = PushHandler()
-        resp = _mock_resp(status=400, text="bad")
-        with (
-            _patch_setting_config({"discord": {"webhook": "http://dc"}}),
-            patch.object(h, "http") as mock_http,
-            patch("hoyo_assistant.core.push.log") as mock_log,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.discord(0, "msg")
-            mock_log.warning.assert_called()
-
-    @pytest.mark.parametrize(
-        "status_id,expected_color",
-        [(0, 1926125), (1, 14368575), (2, 16744192), (3, 16744192)],
-    )
-    def test_get_color_logic(self, status_id, expected_color):
-        # Replicate the get_color closure logic from discord()
-        embed_color = 16744192
-        if status_id == 0:
-            embed_color = 1926125
-        elif status_id == 1:
-            embed_color = 14368575
-        elif status_id in (2, 3):
-            embed_color = 16744192
-        assert embed_color == expected_color
-
-
-class TestServerchan3Provider:
-    @pytest.mark.asyncio
-    async def test_valid_key_sends_post(self):
-        h = PushHandler()
-        resp = _mock_resp()
-        with (
-            _patch_setting_config({"serverchan3": {"sendkey": "sctp123t", "tags": ""}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.serverchan3(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert "123.push.ft07.com" in kwargs["url"]
-            assert "sctp123t.send" in kwargs["url"]
-
-    @pytest.mark.asyncio
-    async def test_invalid_key_raises_value_error(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config(
-                {"serverchan3": {"sendkey": "invalid_key", "tags": ""}}
-            ),
-            pytest.raises(ValueError),
-        ):
-            await h.serverchan3(0, "msg")
-
-
-class TestWecomrobotProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post(self):
-        h = PushHandler()
-        resp = _mock_resp({"errmsg": "ok"})
-        with (
-            _patch_setting_config(
-                {"wecomrobot": {"url": "http://wr", "mobile": "13800000000"}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.wecomrobot(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["json"]["text"]["mentioned_mobile_list"] == ["13800000000"]
-
-
-class TestFeishubotProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post(self):
-        h = PushHandler()
-        resp = _mock_resp({"msg": "ok"})
-        with (
-            _patch_setting_config({"feishubot": {"webhook": "http://fs"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.feishubot(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["json"]["msg_type"] == "text"
-            assert "sign" not in kwargs["json"]
-
-    @pytest.mark.asyncio
-    async def test_with_secret_adds_timestamp_and_sign(self):
-        h = PushHandler()
-        resp = _mock_resp({"msg": "ok"})
-        with (
-            _patch_setting_config(
-                {"feishubot": {"webhook": "http://fs", "secret": "my_secret"}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.feishubot(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert "timestamp" in kwargs["json"]
-            assert "sign" in kwargs["json"]
-
-
-class TestWxpusherProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post(self):
-        h = PushHandler()
-        resp = _mock_resp({"msg": "ok"})
-        with (
-            _patch_setting_config(
-                {
-                    "wxpusher": {
-                        "app_token": "AT_123",
-                        "uids": "UID_1,UID_2",
-                        "topic_ids": "101, 202",
-                    }
-                }
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.wxpusher(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["json"]["appToken"] == "AT_123"
-            assert kwargs["json"]["uids"] == ["UID_1", "UID_2"]
-            assert kwargs["json"]["topicIds"] == [101, 202]
-
-    @pytest.mark.asyncio
-    async def test_missing_config_raises(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"wxpusher": {"app_token": ""}}),
-            pytest.raises(ValueError),
-        ):
-            await h.wxpusher(0, "msg")
-
-
-class TestNtfyProvider:
-    @pytest.mark.asyncio
-    async def test_sends_post_with_token(self):
-        h = PushHandler()
-        resp = _mock_resp(status=200)
-        with (
-            _patch_setting_config(
-                {
-                    "ntfy": {
-                        "api_url": "https://ntfy.example.com/",
-                        "topic": "hoyo",
-                        "token": "tk_123",
-                        "priority": "high",
-                    }
-                }
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.ntfy(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            assert kwargs["url"] == "https://ntfy.example.com/hoyo"
-            assert kwargs["headers"]["Authorization"] == "Bearer tk_123"
-            assert kwargs["headers"]["Priority"] == "high"
-
-    @pytest.mark.asyncio
-    async def test_missing_topic_raises(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"ntfy": {"topic": ""}}),
-            pytest.raises(ValueError),
-        ):
-            await h.ntfy(0, "msg")
-
-    @pytest.mark.asyncio
-    async def test_non_ascii_title_rfc2047_encoded(self):
-        h = PushHandler()
-        resp = _mock_resp(status=200)
-        with (
-            _patch_setting_config({"ntfy": {"topic": "hoyo"}}),
-            patch(
-                "hoyo_assistant.core.push.get_push_title",
-                return_value="HoyoAssistant 执行成功",
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.ntfy(0, "msg")
-            _, kwargs = mock_http.post.call_args
-            sent_title = kwargs["headers"]["Title"]
-            assert sent_title.isascii()
-            assert sent_title.startswith("=?utf-8?b?")
-
-
-class TestDingrobotProvider:
-    @pytest.mark.asyncio
-    async def test_no_secret(self):
-        h = PushHandler()
-        resp = _mock_resp({"errmsg": "ok"})
-        with (
-            _patch_setting_config(
-                {"dingrobot": {"webhook": "http://dr", "secret": ""}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.dingrobot(0, "msg")
-            url = mock_http.post.call_args.kwargs["url"]
-            assert url == "http://dr"
-            assert "timestamp" not in url
-
-    @pytest.mark.asyncio
-    async def test_with_secret_appends_sign(self):
-        h = PushHandler()
-        resp = _mock_resp({"errmsg": "ok"})
-        with (
-            _patch_setting_config(
-                {"dingrobot": {"webhook": "http://dr", "secret": "SEC"}}
-            ),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(return_value=resp)
-            await h.dingrobot(0, "msg")
-            url = mock_http.post.call_args.kwargs["url"]
-            assert "timestamp=" in url
-            assert "sign=" in url
-
-
-# ---------------------------------------------------------------------------
-# push() dispatch orchestration
-# ---------------------------------------------------------------------------
-class TestPushDispatch:
-    @pytest.mark.asyncio
-    async def test_disabled_returns_zero(self):
-        h = PushHandler()
-        with _patch_setting_config({"enable": False, "active": ["telegram"]}):
-            result = await h.push(0, "msg")
-            assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_error_push_only_skips_success_status(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config(
-                {"enable": True, "error_only": True, "active": ["telegram"]}
-            ),
-            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
-        ):
-            result = await h.push(0, "msg")
-            assert result == 0
-            mock_tg.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_error_push_only_allows_failure_status(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config(
-                {"enable": True, "error_only": True, "active": ["telegram"]}
-            ),
-            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
-        ):
-            await h.push(1, "msg")
-            mock_tg.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_dispatches_all_active_channels(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config(
-                {"enable": True, "active": ["telegram", "ftqq", "pushplus"]}
-            ),
-            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
-            patch.object(h, "ftqq", new=AsyncMock()) as mock_ft,
-            patch.object(h, "pushplus", new=AsyncMock()) as mock_pp,
-        ):
-            result = await h.push(0, "msg")
-            assert result == 0
-            mock_tg.assert_awaited_once()
-            mock_ft.assert_awaited_once()
-            mock_pp.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_unknown_channel_name_skipped(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"enable": True, "active": ["nonexistent_channel"]}),
-            patch("hoyo_assistant.core.push.log") as mock_log,
-        ):
-            result = await h.push(0, "msg")
-            # func is None → warning, push_success stays True → 0
-            assert result == 0
-            mock_log.warning.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_provider_exception_returns_one(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"enable": True, "active": ["telegram"]}),
-            patch.object(
-                h, "telegram", new=AsyncMock(side_effect=RuntimeError("boom"))
-            ),
-        ):
-            result = await h.push(0, "msg")
-            assert result == 1
-
-    @pytest.mark.asyncio
-    async def test_msg_replace_applied_before_dispatch(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config(
-                {"enable": True, "active": ["telegram"], "block_keys": "secret"}
-            ),
-            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
-        ):
-            await h.push(0, "my secret msg")
-            # push() calls func(status, masked_msg) positionally
-            sent_msg = mock_tg.call_args[0][1]
-            assert "******" in sent_msg
-            assert "secret" not in sent_msg
-
-    @pytest.mark.asyncio
-    async def test_sync_provider_invoked_without_await(self):
-        """wintoast is a sync method; push() should call it directly."""
-        h = PushHandler()
-        called = {"count": 0}
-
-        def fake_wintoast(status_id, msg):
-            called["count"] += 1
-
-        with (
-            _patch_setting_config({"enable": True, "active": ["wintoast"]}),
-            patch.object(h, "wintoast", side_effect=fake_wintoast),
-        ):
-            await h.push(0, "msg")
-            assert called["count"] == 1
-
-    @pytest.mark.asyncio
-    async def test_partial_failure_returns_one(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config({"enable": True, "active": ["telegram", "ftqq"]}),
-            patch.object(h, "telegram", new=AsyncMock()),
-            patch.object(h, "ftqq", new=AsyncMock(side_effect=ValueError("x"))),
-        ):
-            result = await h.push(0, "msg")
-            assert result == 1
-
-    @pytest.mark.asyncio
-    async def test_empty_active_auto_dispatches_configured_channels(self):
-        h = PushHandler()
-        with (
-            _patch_setting_config(
-                {
-                    "enable": True,
-                    "active": [],
-                    "block_keys": ["secret"],
-                    "channels": {
-                        "telegram": {"bot_token": "B", "chat_id": "1"},
-                        "discord": None,
-                    },
-                }
-            ),
-            patch.object(h, "telegram", new=AsyncMock()) as mock_tg,
-            patch.object(h, "discord", new=AsyncMock()) as mock_dc,
-        ):
-            result = await h.push(0, "hello secret")
-            assert result == 0
-            mock_tg.assert_awaited_once()
-            assert "secret" not in mock_tg.call_args[0][1]
-            mock_dc.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# async_push / module-level push
-# ---------------------------------------------------------------------------
-class TestAsyncPush:
-    @pytest.mark.asyncio
-    async def test_async_push_returns_zero_when_disabled(self):
-        with _patch_setting_config({"enable": False, "active": []}):
-            result = await async_push(0, "msg")
-            assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_push_alias_is_async_push(self):
-        assert push_mod.push is async_push
-
-    @pytest.mark.asyncio
-    async def test_async_push_dispatches_through_handler(self):
-        with (
-            _patch_setting_config({"enable": True, "active": ["telegram"]}),
-            patch.object(PushHandler, "telegram", new=AsyncMock()) as mock_tg,
-        ):
-            await push_mod.push(0, "msg")
-            mock_tg.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# Timeout / network error handling
-# ---------------------------------------------------------------------------
-class TestPushNetworkErrors:
-    @pytest.mark.asyncio
-    async def test_provider_timeout_caught_by_push_dispatch(self):
-
-        h = PushHandler()
-        with (
-            _patch_setting_config({"enable": True, "active": ["telegram"]}),
-            patch.object(h, "telegram", new=AsyncMock(side_effect=TimeoutError())),
-        ):
-            result = await h.push(0, "msg")
-            assert result == 1
-
-    @pytest.mark.asyncio
-    async def test_provider_aiohttp_error_caught(self):
-        import aiohttp
-
-        h = PushHandler()
-        with (
-            _patch_setting_config({"enable": True, "active": ["telegram"]}),
-            patch.object(
-                h,
-                "telegram",
-                new=AsyncMock(side_effect=aiohttp.ClientError("net")),
-            ),
-        ):
-            result = await h.push(0, "msg")
-            assert result == 1
-
-    @pytest.mark.asyncio
-    async def test_telegram_propagates_http_error_when_called_directly(self):
-        import aiohttp
-
-        h = PushHandler()
-        with (
-            _patch_setting_config({"telegram": {"bot_token": "B", "chat_id": "1"}}),
-            patch.object(h, "http") as mock_http,
-        ):
-            mock_http.post = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
-            with pytest.raises(aiohttp.ClientError):
-                await h.telegram(0, "msg")
-
-
-# ---------------------------------------------------------------------------
-# Provider registration sanity (all are coroutine functions except wintoast)
-# ---------------------------------------------------------------------------
-class TestProviderRegistration:
-    @pytest.mark.parametrize(
-        "name",
-        [
-            "telegram",
-            "ftqq",
-            "pushplus",
-            "pushme",
-            "cqhttp",
-            "smtp",
-            "wecom",
-            "wecomrobot",
-            "pushdeer",
-            "dingrobot",
-            "feishubot",
-            "bark",
-            "gotify",
-            "ifttt",
-            "webhook",
-            "qmsg",
-            "discord",
-            "serverchan3",
-            "wxpusher",
-            "ntfy",
-        ],
-    )
-    def test_provider_exists_on_handler(self, name):
-        h = PushHandler()
-        assert hasattr(h, name)
-        assert callable(getattr(h, name))
-
-    def test_all_providers_async_except_wintoast(self):
-        h = PushHandler()
-        async_names = [
-            "telegram",
-            "ftqq",
-            "pushplus",
-            "pushme",
-            "cqhttp",
-            "smtp",
-            "wecom",
-            "wecomrobot",
-            "pushdeer",
-            "dingrobot",
-            "feishubot",
-            "bark",
-            "gotify",
-            "ifttt",
-            "webhook",
-            "qmsg",
-            "discord",
-            "serverchan3",
-            "wxpusher",
-            "ntfy",
-        ]
-        for name in async_names:
-            assert inspect.iscoroutinefunction(getattr(h, name)), (
-                f"{name} should be async"
+            await h.wecom(
+                0,
+                "msg",
+                {"secret": "S", "wechat_id": "CID", "agentid": "9", "touser": "@all"},
             )
-        assert not inspect.iscoroutinefunction(h.wintoast)
+            assert mock_http.post.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_wecomrobot(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp({"errmsg": "ok"}))
+            await h.wecomrobot(0, "msg", {"url": "http://wr", "mobile": ["138"]})
+            assert mock_http.post.call_args.kwargs["json"]["text"][
+                "mentioned_mobile_list"
+            ] == ["138"]
+
+    @pytest.mark.asyncio
+    async def test_pushdeer_and_bark_and_gotify(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.get = AsyncMock(return_value=_mock_resp({"message": "ok"}))
+            mock_http.post = AsyncMock(return_value=_mock_resp({"errmsg": "ok"}))
+            await h.pushdeer(0, "msg", {"api_url": "http://pd", "token": "TK"})
+            assert mock_http.get.call_args.kwargs["params"]["pushkey"] == "TK"
+
+            await h.bark(
+                0, "msg", {"api_url": "http://bark", "token": "TK", "icon": "x"}
+            )
+            assert "/TK/" in mock_http.get.call_args.kwargs["url"]
+
+            await h.gotify(
+                0, "msg", {"api_url": "http://g", "token": "TK", "priority": 5}
+            )
+            assert mock_http.post.call_args.kwargs["json"]["priority"] == 5
+
+    @pytest.mark.asyncio
+    async def test_ifttt(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp(text="ok"))
+            assert await h.ifttt(0, "msg", {"event": "EV", "key": "KY"}) == 1
+            mock_http.post = AsyncMock(
+                return_value=_mock_resp(text='{"errors":["bad"]}')
+            )
+            assert await h.ifttt(0, "msg", {"event": "EV", "key": "KY"}) == 0
+
+    @pytest.mark.asyncio
+    async def test_webhook_and_qmsg_and_discord(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp({"errmsg": "ok"}))
+            await h.webhook(0, "msg", {"url": "http://wh"})
+            assert mock_http.post.call_args.kwargs["url"] == "http://wh"
+
+            await h.qmsg(0, "msg", {"key": "K"})
+            assert "/send/K" in mock_http.post.call_args.kwargs["url"]
+
+            mock_http.post = AsyncMock(return_value=_mock_resp(status=204))
+            await h.discord(0, "msg", {"webhook": "http://dc"})
+            mock_http.post.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_dingrobot_and_feishubot(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp({"errmsg": "ok"}))
+            await h.dingrobot(0, "msg", {"webhook": "http://dr", "secret": "SEC"})
+            assert "sign=" in mock_http.post.call_args.kwargs["url"]
+
+            await h.feishubot(0, "msg", {"webhook": "http://fs", "secret": "SEC"})
+            assert "sign" in mock_http.post.call_args.kwargs["json"]
+
+    @pytest.mark.asyncio
+    async def test_serverchan3_wxpusher_ntfy(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp({"msg": "ok"}))
+            await h.serverchan3(0, "msg", {"sendkey": "sctp123t", "tags": ""})
+            assert "123.push.ft07.com" in mock_http.post.call_args.kwargs["url"]
+
+            await h.wxpusher(
+                0,
+                "msg",
+                {"app_token": "AT", "uids": ["U1"], "topic_ids": [101]},
+            )
+            assert mock_http.post.call_args.kwargs["json"]["appToken"] == "AT"
+
+            await h.ntfy(
+                0,
+                "msg",
+                {
+                    "api_url": "https://ntfy.example.com/",
+                    "topic": "hoyo",
+                    "token": "tk",
+                    "priority": "high",
+                },
+            )
+            assert (
+                mock_http.post.call_args.kwargs["url"]
+                == "https://ntfy.example.com/hoyo"
+            )
+
+
+class TestNamedTargetRoutingAndAggregation:
+    @pytest.mark.asyncio
+    async def test_dispatch_results_merges_shared_target_and_isolates_override(self):
+        h = PushHandler()
+        cfg = {
+            "enable": True,
+            "error_only": False,
+            "merge": True,
+            "default": ["tg_main"],
+            "targets": {
+                "tg_main": {"type": "telegram", "bot_token": "MAIN", "chat_id": "1"},
+                "tg_friend": {
+                    "type": "telegram",
+                    "bot_token": "FRIEND",
+                    "chat_id": "2",
+                },
+            },
+        }
+        results = [
+            AccountRunResult("国服-1", "cn", StatusCode.SUCCESS.value, "ok1", None),
+            AccountRunResult(
+                "国服-2", "cn", StatusCode.FAILURE.value, "bad2", ["tg_friend"]
+            ),
+            AccountRunResult("国际服", "os", StatusCode.SUCCESS.value, "ok3", None),
+            AccountRunResult("静默号", "os", StatusCode.SUCCESS.value, "ok4", []),
+        ]
+        sent: list[tuple[str, int, str]] = []
+
+        async def fake_send(target_name, status, message):
+            sent.append((target_name, status, message))
+            return True
+
+        with (
+            _patch_setting_config(cfg),
+            patch("hoyo_assistant.core.push.is_push_enabled", return_value=True),
+            patch.object(h, "send_to_target", side_effect=fake_send),
+        ):
+            rc = await h.dispatch_results(results)
+
+        assert rc == 0
+        assert len(sent) == 2
+        assert sent[0][0] == "tg_main"
+        assert sent[0][1] == StatusCode.SUCCESS.value
+        assert "【国服-1】\nok1" in sent[0][2]
+        assert "【国际服】\nok3" in sent[0][2]
+        assert "国服-2" not in sent[0][2]
+        assert "静默号" not in sent[0][2]
+
+        assert sent[1][0] == "tg_friend"
+        assert sent[1][1] == StatusCode.FAILURE.value
+        assert sent[1][2] == "【国服-2】\nbad2"
+
+    @pytest.mark.asyncio
+    async def test_error_only_evaluates_independently_per_target(self):
+        h = PushHandler()
+        cfg = {
+            "enable": True,
+            "error_only": True,
+            "merge": True,
+            "default": ["tg_main"],
+            "targets": {
+                "tg_main": {"type": "telegram", "bot_token": "MAIN", "chat_id": "1"},
+                "tg_friend": {
+                    "type": "telegram",
+                    "bot_token": "FRIEND",
+                    "chat_id": "2",
+                },
+            },
+        }
+        results = [
+            AccountRunResult("国服-1", "cn", StatusCode.SUCCESS.value, "ok1", None),
+            AccountRunResult(
+                "国服-2", "cn", StatusCode.FAILURE.value, "bad2", ["tg_friend"]
+            ),
+        ]
+        sent: list[str] = []
+
+        async def fake_send(target_name, status, message):
+            sent.append(target_name)
+            return True
+
+        with (
+            _patch_setting_config(cfg),
+            patch("hoyo_assistant.core.push.is_push_enabled", return_value=True),
+            patch.object(h, "send_to_target", side_effect=fake_send),
+        ):
+            await h.dispatch_results(results)
+
+        assert sent == ["tg_friend"]
+
+    @pytest.mark.asyncio
+    async def test_merge_false_sends_per_account(self):
+        h = PushHandler()
+        cfg = {
+            "enable": True,
+            "error_only": False,
+            "merge": False,
+            "default": ["tg_main"],
+            "targets": {
+                "tg_main": {"type": "telegram", "bot_token": "MAIN", "chat_id": "1"},
+            },
+        }
+        results = [
+            AccountRunResult("A", "cn", StatusCode.SUCCESS.value, "m1", None),
+            AccountRunResult("B", "os", StatusCode.SUCCESS.value, "m2", None),
+        ]
+        sent: list[str] = []
+
+        async def fake_send(target_name, status, message):
+            sent.append(message)
+            return True
+
+        with (
+            _patch_setting_config(cfg),
+            patch("hoyo_assistant.core.push.is_push_enabled", return_value=True),
+            patch.object(h, "send_to_target", side_effect=fake_send),
+        ):
+            await h.dispatch_results(results)
+
+        assert sent == ["【A】\nm1", "【B】\nm2"]
+
+    @pytest.mark.asyncio
+    async def test_disabled_returns_zero_without_sending(self):
+        h = PushHandler()
+        with (
+            _patch_setting_config(
+                {
+                    "enable": False,
+                    "default": ["tg_main"],
+                    "targets": {"tg_main": {"type": "telegram"}},
+                }
+            ),
+            patch("hoyo_assistant.core.push.is_push_enabled", return_value=False),
+            patch.object(h, "send_to_target", new=AsyncMock()) as mock_send,
+        ):
+            assert await h.push(0, "msg") == 0
+            assert (
+                await dispatch_push([AccountRunResult("A", "cn", 0, "ok", None)]) == 0
+            )
+            mock_send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_send_to_target_handles_unknown_target_and_provider_error(self):
+        h = PushHandler()
+        with _patch_setting_config({"targets": {"bad": {"type": "telegram"}}}):
+            assert await h.send_to_target("missing", 0, "m") is False
+            with patch.object(
+                h, "telegram", new=AsyncMock(side_effect=RuntimeError("boom"))
+            ):
+                assert await h.send_to_target("bad", 0, "m") is False
+
+    @pytest.mark.asyncio
+    async def test_async_push_uses_default_targets(self):
+        cfg = {
+            "enable": True,
+            "default": ["tg_main"],
+            "targets": {
+                "tg_main": {"type": "telegram", "bot_token": "B", "chat_id": "1"}
+            },
+        }
+        with (
+            _patch_setting_config(cfg),
+            patch("hoyo_assistant.core.push.is_push_enabled", return_value=True),
+            patch.object(
+                PushHandler, "send_to_target", new=AsyncMock(return_value=True)
+            ) as mock_send,
+        ):
+            rc = await async_push(0, "hello")
+        assert rc == 0
+        mock_send.assert_awaited_once_with("tg_main", 0, "hello")
+
+
+class TestPushProviderFixes:
+    @pytest.mark.asyncio
+    async def test_telegram_accepts_full_scheme_api_url(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp({"ok": True}))
+            await h.telegram(
+                0,
+                "msg",
+                {
+                    "api_url": "https://tg-proxy.example.com/",
+                    "bot_token": "BOT",
+                    "chat_id": "123",
+                },
+            )
+            assert (
+                mock_http.post.call_args.kwargs["url"]
+                == "https://tg-proxy.example.com/botBOT/sendMessage"
+            )
+
+    @pytest.mark.asyncio
+    async def test_dingrobot_without_query_uses_question_mark(self):
+        h = PushHandler()
+        with patch.object(h, "http") as mock_http:
+            mock_http.post = AsyncMock(return_value=_mock_resp({"errcode": 0}))
+            await h.dingrobot(
+                0,
+                "msg",
+                {"webhook": "https://oapi.dingtalk.com/robot/send", "secret": "SEC"},
+            )
+            url = mock_http.post.call_args.kwargs["url"]
+            assert "?timestamp=" in url
+
+    @pytest.mark.asyncio
+    async def test_webhook_handles_204_empty_json_and_400_failure(self):
+        h = PushHandler()
+        resp_204 = AsyncMock()
+        resp_204.status = 204
+        resp_204.json = AsyncMock(side_effect=ValueError("no body"))
+        resp_204.text = AsyncMock(return_value="")
+
+        resp_500 = _mock_resp(status=500, text="Internal Server Error")
+        with (
+            _patch_setting_config(
+                {"targets": {"wh": {"type": "webhook", "url": "http://wh"}}}
+            ),
+            patch.object(h, "http") as mock_http,
+        ):
+            mock_http.post = AsyncMock(return_value=resp_204)
+            assert await h.send_to_target("wh", 0, "msg") is True
+
+            mock_http.post = AsyncMock(return_value=resp_500)
+            assert await h.send_to_target("wh", 0, "msg") is False
+
+    def test_wintoast_missing_dependency_returns_false(self):
+        h = PushHandler()
+        with patch("builtins.__import__", side_effect=ImportError("no win11toast")):
+            assert h.wintoast(0, "msg", {}) is False

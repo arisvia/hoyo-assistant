@@ -200,3 +200,38 @@ class TestPassportAndLifecycle:
     def test_tidy_cookie_skips_malformed_segments(self):
         result = tidy_cookie("a=1; malformed_segment; b = 2")
         assert result == "a=1; b=2"
+
+
+class TestSharedUtilityHelpers:
+    def test_parse_bool_str(self):
+        from hoyo_assistant.core.tools import parse_bool_str
+
+        for val in ("true", "TRUE", "1", "on", "yes"):
+            assert parse_bool_str(val) is True
+        for val in ("false", "0", "off", "NO"):
+            assert parse_bool_str(val) is False
+        for val in ("", "auto", "maybe", None):
+            assert parse_bool_str(val) is None
+
+    def test_use_rich_output_and_is_tty(self, monkeypatch):
+        from hoyo_assistant.core.tools import is_tty, use_rich_output
+
+        monkeypatch.setenv("HOYO_ASSISTANT_CLI_OUTPUT", "plain")
+        assert use_rich_output() is False
+        monkeypatch.setenv("HOYO_ASSISTANT_CLI_OUTPUT", "rich")
+        assert use_rich_output() is True
+        monkeypatch.setenv("CI", "true")
+        assert is_tty(require_stdin=True, check_ci=True) is False
+
+    def test_parse_and_format_cookie(self):
+        from hoyo_assistant.core.tools import format_cookie, parse_cookie
+
+        parsed = parse_cookie("b=2; stuid=99; bad_seg; a=1")
+        assert parsed == {"b": "2", "stuid": "99", "a": "1"}
+        assert format_cookie(parsed) == "stuid=99;b=2;a=1;"
+        assert (
+            format_cookie(
+                parsed, canonical_order=(), sep="; ", trailing_semicolon=False
+            )
+            == "b=2; stuid=99; a=1"
+        )
