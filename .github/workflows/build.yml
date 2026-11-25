@@ -3,7 +3,10 @@ name: 📦 CI Build
 on:
   push:
     branches: [ "main" ]
-    paths: [ "**/*.py", "pyproject.toml" ]
+    paths: [ "**/*.py", "pyproject.toml", "src/hoyo_assistant/locales/*.json", ".github/workflows/build.yml" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -32,6 +35,12 @@ jobs:
           uv pip install build pyinstaller
           uv pip install -e ".[dev]"
 
+      - name: 🧹 Lint & Type Check
+        run: |
+          ruff format --check src tests
+          ruff check src tests
+          mypy src
+
       - name: 🧪 Run tests
         run: pytest -v --cov=hoyo_assistant --cov-report=term-missing
 
@@ -43,12 +52,16 @@ jobs:
         run: |
           python -c "print('from hoyo_assistant.cli import main; main()', file=open('build_entry.py', 'w'))"
           pyinstaller --onefile --name hoyo-assistant --collect-all hoyo_assistant --add-data "src/hoyo_assistant/locales;hoyo_assistant/locales" build_entry.py
+          .\dist\hoyo-assistant.exe --version
+          .\dist\hoyo-assistant.exe --help
 
       - name: 🔨 Build Executable (Linux)
         if: runner.os != 'Windows'
         run: |
           python3 -c "print('from hoyo_assistant.cli import main; main()', file=open('build_entry.py', 'w'))"
           pyinstaller --onefile --name hoyo-assistant --collect-all hoyo_assistant --add-data "src/hoyo_assistant/locales:hoyo_assistant/locales" build_entry.py
+          ./dist/hoyo-assistant --version
+          ./dist/hoyo-assistant --help
 
       - name: 📤 Upload artifact
         uses: actions/upload-artifact@v7
