@@ -1,8 +1,10 @@
-"""
-Execution runners for single and multi-account automation.
-"""
+"""Execution runner for unified peer account automation."""
 
-from .multi_account import run_multi_account
-from .single_account import run_single_account
+from .executor import AccountRunResult, handle_cn_login, run_account, run_accounts
 
-__all__ = ["run_multi_account", "run_single_account"]
+__all__ = [
+    "AccountRunResult",
+    "handle_cn_login",
+    "run_account",
+    "run_accounts",
+]

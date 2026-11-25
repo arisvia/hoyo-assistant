@@ -1,6 +1,6 @@
 from typing import Any
 
-from . import CookieError, config, http, log, login, t
+from . import CookieError, http, log, login, t
 from .constants import (
     API_ACCOUNT_INFO,
     GAME_INFO_ID_TO_CONFIG,
@@ -12,10 +12,10 @@ from .constants import (
 def get_game_name(game_id: str) -> str:
     config_name = GAME_INFO_ID_TO_CONFIG.get(game_id)
     if config_name:
-        return t(
-            f"games.names.{config_name}",
-            default=GAME_INFO_ID_TO_NAME.get(game_id, game_id),
-        )
+        key = f"games.names.{config_name}"
+        translated = t(key)
+        if translated != key:
+            return translated
     return GAME_INFO_ID_TO_NAME.get(game_id, game_id)
 
 
@@ -34,7 +34,7 @@ async def get_account_list(
     game_name = get_game_name(game_id)
 
     if update and await login.update_cookie_token():
-        headers["Cookie"] = config["cn"]["cookie"]
+        headers["Cookie"] = login.get_web_cookie()
     elif update:
         log.warning(t("account.list_fail", name=game_name))
         raise CookieError(t("account.cookie_invalid"))
@@ -45,19 +45,20 @@ async def get_account_list(
     )
     data = await response.json()
     if data["retcode"] == RetCode.UNAUTHORIZED:
-        return await get_account_list(game_id, headers, update=True)
+        if not update:
+            return await get_account_list(game_id, headers, update=True)
+        log.warning(t("account.list_fail", name=game_name))
+        raise CookieError(t("account.cookie_invalid"))
 
     if data["retcode"] != RetCode.OK:
         log.warning(t("account.list_fail", name=game_name))
         return []
 
     account_list: list[tuple[str, str, str]] = []
-    for i in data["data"]["list"]:
+    for i in (data.get("data") or {}).get("list") or []:
         account_list.append((i["nickname"], i["game_uid"], i["region"]))
 
     if len(account_list) == 0:
-        if not update:
-            return await get_account_list(game_id, headers, True)
         log.warning(t("account.cookie_error_game", name=game_name))
         return []
 

@@ -67,14 +67,10 @@ class RetCode(IntEnum):
 
     OK = 0
     UNAUTHORIZED = -100
+    QR_EXPIRED = -106
     STOKEN_EXPIRED_V2 = -3260
     ALREADY_SIGNED_IN = -5003
     CAPTCHA_TRIGGERED = 1034
-
-
-# Runtime credential error sentinels
-COOKIE_ERROR_SENTINEL: Final[str] = "CookieError"
-STOKEN_ERROR_SENTINEL: Final[str] = "StokenError"
 
 
 # =============================================================================
@@ -151,22 +147,7 @@ GAME_INFO_ID_TO_CONFIG: Final[dict[str, str]] = {
     "hyg_cn": "planet",
 }
 
-# Supported built-in game config keys
-CN_GAME_KEYS: Final[tuple[str, ...]] = (
-    "honkai2",
-    "honkai3rd",
-    "tears_of_themis",
-    "genshin",
-    "honkai_sr",
-    "zzz",
-)
-OS_GAME_KEYS: Final[tuple[str, ...]] = (
-    "honkai3rd",
-    "tears_of_themis",
-    "genshin",
-    "honkai_sr",
-    "zzz",
-)
+# Supported built-in cloud game config keys
 CN_CLOUD_GAME_KEYS: Final[tuple[str, ...]] = ("genshin", "zzz")
 OS_CLOUD_GAME_KEYS: Final[tuple[str, ...]] = ("genshin", "zzz")
 
@@ -206,9 +187,31 @@ API_ZZZ_WEB: Final[str] = "https://act-nap-api.mihoyo.com"
 API_CLOUD_GENSHIN_OS: Final[str] = "https://sg-cg-api.hoyoverse.com"
 API_OS_REFERER: Final[str] = "https://act.hoyolab.com/"
 
+# QR Login & Cloud Game SDK constants (CN)
+HK4E_CN_APP_ID: Final[str] = "4"
+HK4E_CN_CHANNEL_ID: Final[str] = "1"
+HK4E_CN_APP_KEY: Final[str] = "d0d3a7342df2026a70f650b907800111"
+NAP_CN_APP_ID: Final[str] = "12"
+QR_LOGIN_POLL_INTERVAL: Final[float] = 2.0
+QR_LOGIN_DEFAULT_TIMEOUT: Final[int] = 120
+QR_AUTO_PROMPT_TIMEOUT: Final[int] = 10
+
+API_QR_FETCH: Final[str] = (
+    "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/fetch"
+)
+API_QR_QUERY: Final[str] = (
+    "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/query"
+)
+API_HK4E_COMBO_LOGIN: Final[str] = (
+    "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/granter/login/v2/login"
+)
+
 # User & Token APIs
 API_ACCOUNT_INFO: Final[str] = f"{API_WEB}/binding/api/getUserGameRolesByCookie"
 API_PASSPORT_EXCHANGE: Final[str] = f"{API_PASSPORT}/account/ma-cn-session/app/exchange"
+API_PASSPORT_GET_TOKEN_BY_GAME_TOKEN: Final[str] = (
+    f"{API_WEB}/account/ma-cn-session/app/getTokenByGameToken"
+)
 API_BBS_GET_COOKIE_TOKEN: Final[str] = (
     f"{API_WEB}/auth/api/getCookieAccountInfoBySToken"
 )
@@ -217,8 +220,6 @@ API_BBS_GET_COOKIE_TOKEN: Final[str] = (
 API_BBS_GAME_LIST: Final[str] = f"{API_BBS}/apihub/wapi/getGameList"
 API_BBS_TASKS_LIST: Final[str] = f"{API_BBS}/apihub/wapi/getUserMissionsState"
 API_BBS_SIGN: Final[str] = f"{API_BBS}/apihub/app/api/signIn"
-API_BBS_GET_CAPTCHA: Final[str] = f"{API_BBS}/misc/api/createVerification?is_high=true"
-API_BBS_CAPTCHA_VERIFY: Final[str] = f"{API_BBS}/misc/api/verifyVerification"
 
 # Game Check-in
 CN_GAME_LANG: Final[str] = "zh-cn"
@@ -287,3 +288,40 @@ OS_ACT_ID_TO_SIGNGAME: Final[dict[str, str]] = {
     ACT_ID_OS_HONKAI_SR: "hkrpg",
     ACT_ID_OS_ZZZ: "zzz",
 }
+
+# Push Provider Default URLs
+PUSH_PUSHME_URL: Final[str] = "https://push.i-i.me/"
+PUSH_NTFY_DEFAULT_URL: Final[str] = "https://ntfy.sh"
+
+# Cookie Field Ordering & Key Aliases
+COOKIE_ORDER: Final[tuple[str, ...]] = (
+    "ltoken_v2",
+    "ltuid_v2",
+    "ltmid_v2",
+    "cookie_token_v2",
+    "account_id_v2",
+    "account_mid_v2",
+    "ltoken",
+    "ltuid",
+    "account_id",
+    "cookie_token",
+    "login_uid",
+    "stuid",
+    "stoken",
+    "mid",
+)
+COOKIE_UID_KEYS: Final[tuple[str, ...]] = (
+    "stuid",
+    "account_id_v2",
+    "ltuid_v2",
+    "account_id",
+    "ltuid",
+    "login_uid",
+)
+COOKIE_MID_KEYS: Final[tuple[str, ...]] = ("mid", "account_mid_v2", "ltmid_v2")
+COOKIE_V2_TO_V1_ALIASES: Final[tuple[tuple[str, str], ...]] = (
+    ("ltoken_v2", "ltoken"),
+    ("ltuid_v2", "ltuid"),
+    ("account_id_v2", "account_id"),
+    ("cookie_token_v2", "cookie_token"),
+)

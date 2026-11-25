@@ -2,7 +2,7 @@ import asyncio
 import random
 from typing import Any, cast
 
-from ...core import CookieError, account, captcha, config, http, log, login, t, tools
+from ...core import CookieError, account, http, log, login, setting, t, tools
 from ...core.constants import (
     ACT_ID_CN_GENSHIN,
     ACT_ID_CN_HONKAI2,
@@ -31,8 +31,10 @@ from ...core.constants import (
     REF_BH3_SIGN,
     REF_GENSHIN_SIGN,
     REF_NXX_SIGN,
+    RETRY_TIMES,
     RetCode,
 )
+from ...core.models import TaskReport
 
 
 class GameCheckin:
@@ -66,23 +68,25 @@ class GameCheckin:
         """Apply game-specific headers. Subclasses override this so cookie refreshes preserve them."""
 
     def set_headers(self) -> None:
-        cookie = config["cn"]["cookie"]
-        device_cfg = config["client"]["device"]
+        cn_cfg = setting.get_account()
+        raw_cookie = str(cn_cfg.get("cookie", ""))
+        web_cookie = login.get_web_cookie()
+        device_cfg = cn_cfg.get("device") or {}
         device_id = device_cfg.get("id") or (
-            tools.get_device_id(cookie) if cookie else ""
+            tools.get_device_id(raw_cookie) if raw_cookie else ""
         )
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "DS": tools.get_ds(web=True),
             "Origin": ORIGIN_MIHOYO_WEBSTATIC,
             "x-rpc-app_version": MIHOYOBBS_VERSION,
-            "User-Agent": tools.resolve_user_agent(config["client"]["user_agent"]),
+            "User-Agent": tools.resolve_user_agent(cn_cfg.get("user_agent", "")),
             "x-rpc-client_type": MIHOYOBBS_CLIENT_TYPE_WEB,
             "Referer": f"{REF_GENSHIN_SIGN}?act_id={self.act_id}",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": MIHOYOBBS_ACCEPT_LANGUAGE,
             "X-Requested-With": MIHOYOBBS_X_REQUESTED_WITH,
-            "Cookie": cookie,
+            "Cookie": web_cookie,
             "x-rpc-device_id": device_id,
         }
         if device_cfg.get("fp"):
@@ -97,7 +101,7 @@ class GameCheckin:
 
     def _get_black_list(self) -> list[str]:
         """Return configured blacklist UIDs for this game (top-level + custom game)."""
-        cn_cfg = config["cn"]
+        cn_cfg = setting.get_account()
         black_list: list[str] = list(
             (cn_cfg.get("black_list") or {}).get(self.game_mid) or []
         )
@@ -148,7 +152,7 @@ class GameCheckin:
 
     async def check_in(self, profile: list[Any]) -> Any:
         header = self.headers.copy()
-        retries = config["cn"].get("retries", 3)
+        retries = RETRY_TIMES
         result = None
         for i in range(1, retries + 1):
             if i > 1:
@@ -164,40 +168,29 @@ class GameCheckin:
                 log.warning(t("games.cn.rate_limit"))
                 continue
             data = await result.json()
+            payload = data.get("data") if isinstance(data, dict) else None
             if (
-                data["retcode"] == RetCode.OK
-                and data["data"]["success"] == 1
+                isinstance(data, dict)
+                and data.get("retcode") == RetCode.OK
+                and isinstance(payload, dict)
+                and payload.get("success") == 1
                 and i < retries
             ):
-                captcha_result = captcha.game_captcha(
-                    data["data"]["gt"], data["data"]["challenge"]
-                )
-                if captcha_result is not None:
-                    challenge = data["data"]["challenge"]
-                    if isinstance(captcha_result, dict):
-                        validate = captcha_result["validate"]
-                        challenge = captcha_result["challenge"]
-                    else:
-                        validate = captcha_result  # type: ignore[unreachable]
-                    header.update(
-                        {
-                            "x-rpc-challenge": challenge,
-                            "x-rpc-validate": validate,
-                            "x-rpc-seccode": f"{validate}|jordan",
-                        }
-                    )
                 await asyncio.sleep(random.randint(*DELAY_CAPTCHA_RETRY_RANGE))
             else:
                 break
         return result
 
-    async def sign_account(self) -> str:
+    async def sign_account(self) -> TaskReport:
         return_data = f"{self.game_name}: "
         if not self.profiles:
             log.warning(t("games.cn.no_account", name=self.game_name))
             return_data += t("games.cn.no_account_msg", name=self.game_name)
-            return return_data
+            return TaskReport(return_data, had_error=False, had_success=True)
         black_list = self._get_black_list()
+        had_error = False
+        had_success = False
+        had_captcha = False
         for profile in self.profiles:
             if profile[1] in black_list:
                 log.info(t("games.cn.blacklisted", uid=profile[1]))
@@ -208,11 +201,13 @@ class GameCheckin:
             if not isinstance(is_data, dict):
                 log.warning(t("games.cn.getting_info_fail"))
                 return_data += t("games.cn.sign_fail_account", uid=profile[0])
+                had_error = True
                 continue
             if is_data.get("first_bind", False):
                 log.warning(
                     t("games.cn.first_bind", name=self.player_name, uid=profile[0])
                 )
+                had_success = True
                 continue
             total_days = int(is_data.get("total_sign_day", 0))
             if is_data["is_sign"]:
@@ -226,6 +221,7 @@ class GameCheckin:
                         reward=reward_item,
                     )
                 )
+                had_success = True
             else:
                 await asyncio.sleep(random.randint(*DELAY_SIGN_RANGE))
                 req = await self.check_in(profile)
@@ -239,6 +235,7 @@ class GameCheckin:
                         )
                     )
                     return_data += t("games.cn.sign_fail_account", uid=profile[0])
+                    had_error = True
                     continue
                 if req.status != 429:
                     data = await req.json()
@@ -257,6 +254,7 @@ class GameCheckin:
                                 reward=reward_item,
                             )
                         )
+                        had_success = True
                     elif data.get("retcode") == RetCode.ALREADY_SIGNED_IN:
                         signed_days = total_days
                         reward_item = self._format_reward(max(signed_days - 1, 0))
@@ -268,22 +266,32 @@ class GameCheckin:
                                 reward=reward_item,
                             )
                         )
+                        had_success = True
                     else:
                         s = t("games.cn.sign_fail_msg")
-                        if (
-                            payload not in (None, "")
-                            and isinstance(payload, dict)
-                            and payload.get("success", -1)
-                        ):
+                        is_captcha = isinstance(payload, dict) and bool(
+                            payload.get("success")
+                        )
+                        if is_captcha:
                             s += (
                                 f"{t('games.cn.captcha_trigger')}\njson info: "
                                 + await req.text()
                             )
-                        log.warning(s)
-                        return_data += t("games.cn.sign_fail_captcha", uid=profile[0])
+                            log.warning(s)
+                            return_data += t(
+                                "games.cn.sign_fail_captcha", uid=profile[0]
+                            )
+                            had_captcha = True
+                        else:
+                            log.warning(s)
+                            return_data += t(
+                                "games.cn.sign_fail_account", uid=profile[0]
+                            )
+                            had_error = True
                         continue
                 else:
                     return_data += t("games.cn.sign_fail_account", uid=profile[0])
+                    had_error = True
                     continue
 
             reward_item_final = self._format_reward(max(signed_days - 1, 0))
@@ -293,7 +301,12 @@ class GameCheckin:
                 days=signed_days,
                 reward=reward_item_final,
             )
-        return return_data
+        return TaskReport(
+            return_data,
+            had_error=had_error,
+            had_success=had_success,
+            had_captcha=had_captcha,
+        )
 
 
 class Honkai2(GameCheckin):
@@ -425,8 +438,8 @@ class CustomCNGameCheckin(GameCheckin):
 
 async def checkin_game(
     game_name: str, game_module: type, game_print_name: str = ""
-) -> str:
-    enabled_games = config["cn"].get("games") or []
+) -> TaskReport:
+    enabled_games = setting.get_account().get("games") or []
     if game_name in enabled_games:
         await asyncio.sleep(random.randint(*DELAY_SIGN_RANGE))
         if game_print_name == "":
@@ -434,11 +447,17 @@ async def checkin_game(
         log.info(t("games.cn.checkin_start", name=game_print_name))
         instance = game_module()
         await instance.init()
-        return f"\n\n{await instance.sign_account()}"
-    return ""
+        res = await instance.sign_account()
+        return TaskReport(
+            f"\n\n{res}",
+            had_error=getattr(res, "had_error", False),
+            had_success=getattr(res, "had_success", bool(res)),
+            had_captcha=getattr(res, "had_captcha", False),
+        )
+    return TaskReport("", had_error=False, had_success=False)
 
 
-async def run_task() -> str:
+async def run_task() -> TaskReport:
     games = [
         ("honkai2", Honkai2, "games.names.honkai2"),
         ("honkai3rd", Honkai3rd, "games.names.honkai3rd"),
@@ -448,10 +467,21 @@ async def run_task() -> str:
         ("zzz", ZZZ, "games.names.zzz"),
     ]
     return_data = ""
-    for game_name, game_module, name_key in games:
-        return_data += await checkin_game(game_name, game_module, t(name_key))
+    had_error = False
+    had_success = False
+    had_captcha = False
 
-    custom_games = config["cn"].get("custom_games") or {}
+    for game_name, game_module, name_key in games:
+        part = await checkin_game(game_name, game_module, t(name_key))
+        return_data += part
+        if getattr(part, "had_error", False):
+            had_error = True
+        if getattr(part, "had_success", bool(part)):
+            had_success = True
+        if getattr(part, "had_captcha", False):
+            had_captcha = True
+
+    custom_games = setting.get_account().get("custom_games") or {}
     for game_mid, spec in custom_games.items():
         if (
             isinstance(spec, dict)
@@ -464,5 +494,18 @@ async def run_task() -> str:
             log.info(t("games.cn.checkin_start", name=display_name))
             instance = CustomCNGameCheckin(game_mid, spec)
             await instance.init()
-            return_data += f"\n\n{await instance.sign_account()}"
-    return return_data
+            res = await instance.sign_account()
+            return_data += f"\n\n{res}"
+            if getattr(res, "had_error", False):
+                had_error = True
+            if getattr(res, "had_success", bool(res)):
+                had_success = True
+            if getattr(res, "had_captcha", False):
+                had_captcha = True
+
+    return TaskReport(
+        return_data,
+        had_error=had_error,
+        had_success=had_success,
+        had_captcha=had_captcha,
+    )

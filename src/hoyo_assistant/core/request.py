@@ -7,7 +7,6 @@ import aiohttp
 from cachetools import TTLCache
 from tenacity import (
     AsyncRetrying,
-    RetryError,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -56,6 +55,9 @@ class MockResponse:
 
     async def __aenter__(self) -> "MockResponse":
         return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
 
 
 class HttpClient:
@@ -220,8 +222,11 @@ class HttpClient:
                         if response.status == 429:  # Rate limit
                             reset_time = response.headers.get("X-RateLimit-Reset")
                             log.warning(t("system.rate_limit", reset_time=reset_time))
-                            # Raise so retry works
-                            raise aiohttp.ClientError("Rate limited")
+                            if attempt.retry_state.attempt_number < RETRY_TIMES:
+                                # Raise so tenacity backs off and retries transient 429s;
+                                # on the final attempt return the 429 response for caller handling.
+                                raise aiohttp.ClientError("Rate limited")
+                            return response
 
                         return response
 
@@ -230,11 +235,11 @@ class HttpClient:
                         log.debug(t("system.request_exception", error=str(e)))
                         raise e
 
-        except RetryError as e:
-            log.error(t("system.retry_fail", retry=RETRY_TIMES, url=url))
-            raise e
         except Exception as e:
-            log.error(t("system.request_exception", error=str(e)))
+            if isinstance(e, aiohttp.ClientError):
+                log.error(t("system.retry_fail", retry=RETRY_TIMES, url=url))
+            else:
+                log.error(t("system.request_exception", error=str(e)))
             raise e
 
         # 理论上不会走到这里（AsyncRetrying 至少会尝试一次），但加上让类型检查更安心
@@ -248,9 +253,18 @@ class HttpClient:
         """发送POST请求"""
         return await self.request("POST", url, **kwargs)
 
-    def clear_cache(self) -> None:
-        """清空缓存"""
-        self.cache.clear()
+    def clear_cache(self, include_public: bool = True) -> None:
+        """Clear cached HTTP GET responses.
+
+        When ``include_public`` is False, retain unauthenticated (public) entries
+        whose cache scope contains no cookie, authorization, or combo token.
+        """
+        if include_public:
+            self.cache.clear()
+        else:
+            public_scope = self._freeze({"cookie": "", "authorization": ""})
+            for key in [k for k in self.cache if k[2] != public_scope]:
+                self.cache.pop(key, None)
         log.debug(t("system.cache_cleared"))
 
     def clear_cookies(self) -> None:

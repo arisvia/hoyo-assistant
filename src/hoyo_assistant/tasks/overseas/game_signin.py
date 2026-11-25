@@ -1,7 +1,7 @@
 import asyncio
 import random
 
-from ...core import config, http, log, t
+from ...core import http, log, setting, t
 from ...core.constants import (
     ACT_ID_OS_GENSHIN,
     ACT_ID_OS_HONKAI3RD,
@@ -20,6 +20,7 @@ from ...core.constants import (
     OS_ACT_ID_TO_SIGNGAME,
     RetCode,
 )
+from ...core.models import TaskReport
 
 OS_GAMES: tuple[tuple[str, str, str, str], ...] = (
     ("genshin", API_OS_ACT, ACT_ID_OS_GENSHIN, "games.names.genshin"),
@@ -40,7 +41,7 @@ async def hoyo_checkin(
     act_id: str,
     game_name: str,
     signgame: str | None = None,
-) -> str:
+) -> TaskReport:
     """
     国际服游戏签到
 
@@ -50,7 +51,7 @@ async def hoyo_checkin(
     :param signgame: 可选 x-rpc-signgame 请求头值
     :return: 签到结果
     """
-    os_cfg = config.get("os", {})
+    os_cfg = setting.get_account()
     os_lang = os_cfg.get("lang", DEFAULT_OS_LANG)
     base = event_base_url.rstrip("/")
     reward_url = f"{base}/home?lang={os_lang}&act_id={act_id}"
@@ -58,7 +59,7 @@ async def hoyo_checkin(
     sign_url = f"{base}/sign?lang={os_lang}"
 
     cookie_str = os_cfg.get("cookie", "")
-    custom_ua = config.get("client", {}).get("user_agent", "")
+    custom_ua = os_cfg.get("user_agent", "")
 
     headers: dict[str, str] = {
         "Accept": "application/json, text/plain, */*",
@@ -83,7 +84,7 @@ async def hoyo_checkin(
         reason = info_list.get("message", "Unknown error")
         ret_msg = t("games.os.checkin_fail", game=game_name, reason=reason)
         log.error(ret_msg)
-        return ret_msg
+        return TaskReport(ret_msg, had_error=True, had_success=False)
 
     today = info_data.get("today")
     total_sign_in_day = int(info_data.get("total_sign_day") or 0)
@@ -93,12 +94,12 @@ async def hoyo_checkin(
     if already_signed_in:
         ret_msg = t("games.os.checkin_already", game=game_name)
         log.info(ret_msg)
-        return ret_msg
+        return TaskReport(ret_msg, had_error=False, had_success=True)
 
     if first_bind:
         ret_msg = t("games.os.manual_checkin", game=game_name)
         log.warning(ret_msg)
-        return ret_msg
+        return TaskReport(ret_msg, had_error=False, had_success=True)
 
     resp_awards = await http.get(reward_url, headers=headers, use_cache=False)
     awards_data = await resp_awards.json()
@@ -126,7 +127,7 @@ async def hoyo_checkin(
     if code == RetCode.ALREADY_SIGNED_IN:
         ret_msg = t("games.os.checkin_already", game=game_name)
         log.info(ret_msg)
-        return ret_msg
+        return TaskReport(ret_msg, had_error=False, had_success=True)
     if code != RetCode.OK:
         ret_msg = t(
             "games.os.checkin_fail",
@@ -134,7 +135,7 @@ async def hoyo_checkin(
             reason=response.get("message", "Unknown error"),
         )
         log.error(ret_msg)
-        return ret_msg
+        return TaskReport(ret_msg, had_error=True, had_success=False)
 
     days = total_sign_in_day + 1
     if isinstance(awards, list) and awards:
@@ -162,28 +163,49 @@ async def hoyo_checkin(
         name=reward_name,
         count=reward_cnt,
     )
-    return ret_msg
+    return TaskReport(ret_msg, had_error=False, had_success=True)
 
 
-async def run_task() -> str:
+async def run_task() -> TaskReport:
     log.info(t("games.os.start"))
-    os_conf = config["os"]
+    os_conf = setting.get_account()
     enabled_games = set(os_conf.get("games") or [])
     ret_parts: list[str] = []
+    had_error = False
+    had_success = False
+
     for config_key, api_base, act_id, name_key in OS_GAMES:
         if config_key in enabled_games:
-            ret_parts.append(await hoyo_checkin(api_base, act_id, t(name_key)))
+            if ret_parts:
+                await asyncio.sleep(random.randint(*DELAY_SIGN_RANGE))
+            part = await hoyo_checkin(api_base, act_id, t(name_key))
+            if part:
+                ret_parts.append(part)
+            if getattr(part, "had_error", False):
+                had_error = True
+            if getattr(part, "had_success", bool(part)):
+                had_success = True
 
     custom_games = os_conf.get("custom_games") or {}
     for game_key, spec in custom_games.items():
         if isinstance(spec, dict) and spec.get("enable", True) and spec.get("act_id"):
+            if ret_parts:
+                await asyncio.sleep(random.randint(*DELAY_SIGN_RANGE))
             api_base = str(spec.get("api_base") or API_OS_ACT_LUNA)
             display_name = str(spec.get("name") or game_key)
             signgame = str(spec.get("signgame") or "") or None
-            ret_parts.append(
-                await hoyo_checkin(
-                    api_base, str(spec["act_id"]), display_name, signgame=signgame
-                )
+            part = await hoyo_checkin(
+                api_base, str(spec["act_id"]), display_name, signgame=signgame
             )
+            if part:
+                ret_parts.append(part)
+            if getattr(part, "had_error", False):
+                had_error = True
+            if getattr(part, "had_success", bool(part)):
+                had_success = True
 
-    return "\t".join(part for part in ret_parts if part)
+    return TaskReport(
+        "\n".join(ret_parts),
+        had_error=had_error,
+        had_success=had_success,
+    )

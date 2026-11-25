@@ -25,6 +25,7 @@ class BaseCloudGame:
         self.coin_name = coin_name
         self.clear_cookie_func = clear_cookie_func
         self.headers = headers
+        self.had_error = False
 
     async def check_in(self, *, retry_on_limit: bool = False) -> str:
         """Perform cloud game sign-in.
@@ -33,19 +34,22 @@ class BaseCloudGame:
             retry_on_limit: Whether to retry when limit not reached (CN specific).
         """
         log.info(t("games.cloud.checkin_start", game=self.game))
+        self.had_error = False
         ret_msg = ""
 
         try:
             res = await http.get(url=self.url, headers=self.headers, use_cache=False)
             if res.status in (400, 401, 403):
+                self.had_error = True
                 ret_msg += t("games.cloud.token_invalid", game=self.game)
                 log.warning(ret_msg)
                 await self.clear_cookie_func()
                 return ret_msg
 
             data = await res.json()
+            retcode = data.get("retcode") if isinstance(data, dict) else None
 
-            if data["retcode"] == RetCode.OK:
+            if retcode == RetCode.OK:
                 free_time = data["data"]["free_time"]
                 free_seconds = int(free_time["free_time"])
                 send_free_time = int(free_time["send_freetime"])
@@ -96,16 +100,19 @@ class BaseCloudGame:
                 )
                 log.info(status_msg)
                 ret_msg += "\t" + status_msg
-            elif data["retcode"] == RetCode.UNAUTHORIZED:
+            elif retcode == RetCode.UNAUTHORIZED:
+                self.had_error = True
                 ret_msg += t("games.cloud.token_invalid", game=self.game)
                 log.warning(ret_msg)
                 await self.clear_cookie_func()
             else:
+                self.had_error = True
                 err_msg = await res.text()
                 ret_msg += t("games.cloud.script_fail", game=self.game, error=err_msg)
                 log.warning(ret_msg)
 
         except Exception as e:
+            self.had_error = True
             err_msg = t("games.cloud.exec_error", game=self.game, error=e)
             log.error(err_msg)
             ret_msg += err_msg

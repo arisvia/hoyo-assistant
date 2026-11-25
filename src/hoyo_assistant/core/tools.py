@@ -1,18 +1,33 @@
 import hashlib
+import os
 import random
+import re
 import string
+import sys
 import time
 import uuid
-from typing import Any
+from typing import Any, Final
 
 from . import t
 from .constants import (
+    COOKIE_ORDER,
     DEFAULT_HEADERS,
     MIHOYOBBS_SALT,
     MIHOYOBBS_SALT_PASSPORT,
     MIHOYOBBS_SALT_WEB,
     MIHOYOBBS_SALT_X6,
     MIHOYOBBS_VERSION,
+    EnvVar,
+)
+
+_TRUE_BOOL_VALUES: Final[frozenset[str]] = frozenset({"true", "1", "on", "yes"})
+_FALSE_BOOL_VALUES: Final[frozenset[str]] = frozenset({"false", "0", "off", "no"})
+_CI_ENV_VARS: Final[tuple[str, ...]] = (
+    "CI",
+    "GITHUB_ACTIONS",
+    "GITLAB_CI",
+    "JENKINS_URL",
+    "BUILDKITE",
 )
 
 _lifecycle_id: str = ""
@@ -138,52 +153,110 @@ def time_conversion(minute: int) -> str:
     return t("system.time_format", h=h, s=s)
 
 
-def tidy_cookie(cookies: str) -> str:
-    """
-    整理cookie
+def parse_bool_str(value: str | None) -> bool | None:
+    """Parse canonical boolean strings; return None when unset or unrecognized."""
+    normalized = str(value or "").strip().lower()
+    if normalized in _TRUE_BOOL_VALUES:
+        return True
+    if normalized in _FALSE_BOOL_VALUES:
+        return False
+    return None
 
-    :param cookies: cookie
-    :return: 整理后的cookie
-    """
-    cookie_dict = {}
-    spilt_cookie = cookies.split(";")
-    if len(spilt_cookie) < 2:
-        return cookies
-    for cookie in spilt_cookie:
-        cookie = cookie.strip()
-        if cookie == "" or "=" not in cookie:
+
+def is_tty(*, require_stdin: bool = False, check_ci: bool = True) -> bool:
+    """Return True when attached terminal streams are TTYs (outside CI if checked)."""
+    if check_ci:
+        for env_name in _CI_ENV_VARS:
+            raw = os.getenv(env_name, "").strip()
+            if raw and parse_bool_str(raw) is not False:
+                return False
+
+    stdout_tty = bool(getattr(getattr(sys, "stdout", None), "isatty", lambda: False)())
+    if not stdout_tty:
+        return False
+    second = (
+        getattr(sys, "stdin", None) if require_stdin else getattr(sys, "stderr", None)
+    )
+    return bool(getattr(second, "isatty", lambda: False)())
+
+
+def use_rich_output(*, require_stdin: bool = False, check_ci: bool = False) -> bool:
+    """Return True when output should emit ANSI colors / Rich markup."""
+    mode = os.getenv(EnvVar.CLI_OUTPUT, "auto").strip().lower()
+    if mode in {"plain", "text", "simple"}:
+        return False
+    if mode in {"rich", "pretty"}:
+        return True
+    parsed = parse_bool_str(mode)
+    if parsed is not None:
+        return parsed
+    return is_tty(require_stdin=require_stdin, check_ci=check_ci)
+
+
+def parse_cookie(cookie: str) -> dict[str, str]:
+    """Parse a cookie header string into a dict (ignoring empty/malformed parts)."""
+    result: dict[str, str] = {}
+    for segment in re.split(r"[;\r\n]+", cookie or ""):
+        text = segment.strip()
+        if not text or "=" not in text:
             continue
-        key, value = cookie.split("=", 1)
-        cookie_dict[key.strip()] = value.strip()
-    return "; ".join([f"{key}={value}" for key, value in cookie_dict.items()])
+        key, value = text.split("=", 1)
+        key, value = key.strip(), value.strip()
+        if key and value:
+            result[key] = value
+    return result
 
 
-def get_useragent(useragent: str) -> str:
-    """
-    获取用户代理
+def format_cookie(
+    fields: dict[str, str],
+    *,
+    canonical_order: tuple[str, ...] = COOKIE_ORDER,
+    sep: str = ";",
+    trailing_semicolon: bool = True,
+) -> str:
+    """Format a cookie dict back into a string with optional canonical ordering."""
+    if canonical_order:
+        ordered = [k for k in canonical_order if fields.get(k)]
+        ordered += [k for k in fields if k not in canonical_order and fields[k]]
+    else:
+        ordered = [k for k, v in fields.items() if v]
+    if not ordered:
+        return ""
+    rendered = sep.join(f"{k}={fields[k]}" for k in ordered)
+    return f"{rendered};" if trailing_semicolon else rendered
 
-    :param useragent: 自定义ua
-    :return: 包含单个mihoyobbs的ua
-    """
-    if useragent == "":  # 没设置自定义ua就返回默认ua
-        return DEFAULT_HEADERS["User-Agent"]
-    if "miHoYoBBS" in useragent:  # 防止出现多个miHoYoBBS
-        i = useragent.index("miHoYoBBS")
-        if useragent[i - 1] == " ":
-            i = i - 1
-        return f"{useragent[:i]} miHoYoBBS/{MIHOYOBBS_VERSION}"
-    return f"{useragent} miHoYoBBS/{MIHOYOBBS_VERSION}"
+
+def tidy_cookie(cookies: str) -> str:
+    """Normalize whitespace and drop empty segments while preserving key order."""
+    if ";" not in cookies and "\r" not in cookies and "\n" not in cookies:
+        return cookies
+    parsed = parse_cookie(cookies)
+    if not parsed:
+        return cookies
+    return format_cookie(parsed, canonical_order=(), sep="; ", trailing_semicolon=False)
 
 
 def resolve_user_agent(custom: str = "") -> str:
-    """Resolve the effective User-Agent for browser-style endpoints.
+    """Resolve the effective User-Agent containing exactly one miHoYoBBS token.
 
-    Single source of truth for CN signin / community headers.
     Empty/unset ``custom`` falls back to the default UA template (which already
     carries the ``miHoYoBBS/{version}`` suffix). A non-empty custom UA gets the
     suffix appended (deduped) so every endpoint speaks the same protocol.
 
-    :param custom: user-provided UA from ``config["client"]["user_agent"]``.
+    :param custom: user-provided UA string from the active account's ``user_agent``.
     :return: a UA string containing exactly one ``miHoYoBBS/{version}`` token.
     """
-    return get_useragent(custom or "")
+    ua = custom or ""
+    if ua == "":
+        return DEFAULT_HEADERS["User-Agent"]
+    if "miHoYoBBS" in ua:
+        i = ua.index("miHoYoBBS")
+        if i > 0 and ua[i - 1] == " ":
+            i -= 1
+        return f"{ua[:i]} miHoYoBBS/{MIHOYOBBS_VERSION}"
+    return f"{ua} miHoYoBBS/{MIHOYOBBS_VERSION}"
+
+
+def get_useragent(useragent: str) -> str:
+    """Return a User-Agent string normalized with a single miHoYoBBS suffix."""
+    return resolve_user_agent(useragent)

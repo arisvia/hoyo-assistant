@@ -1,6 +1,7 @@
 import json
 import locale
 import os
+import sys
 from typing import Any, cast
 
 from .constants import EnvVar
@@ -11,18 +12,48 @@ class I18n:
     def __init__(self) -> None:
         self._locales: dict[str, dict[str, Any]] = {}
         self._current_lang = "zh_CN"
-        self._locales_dir = os.path.join(
+        default_dir = os.path.join(
             os.path.dirname(os.path.dirname(str(os.path.abspath(__file__)))), "locales"
         )
+        meipass = getattr(sys, "_MEIPASS", None)
+        if getattr(sys, "frozen", False) and meipass:
+            bundled_dir = os.path.join(str(meipass), "hoyo_assistant", "locales")
+            self._locales_dir = (
+                bundled_dir if os.path.exists(bundled_dir) else default_dir
+            )
+        else:
+            self._locales_dir = default_dir
         self._load_locales()
         self._detect_language()
+
+    def _normalize_lang(self, lang_code: str) -> str | None:
+        cleaned = lang_code.strip().split(".")[0].replace("-", "_")
+        if not cleaned:
+            return None
+        if cleaned in self._locales:
+            return cleaned
+        lowered = cleaned.lower()
+        for existing in self._locales:
+            if existing.lower() == lowered:
+                return existing
+        if lowered.startswith("zh") or "chinese" in lowered:
+            return "zh_CN" if "zh_CN" in self._locales else None
+        if lowered.startswith("en") or "english" in lowered:
+            return "en_US" if "en_US" in self._locales else None
+        return None
 
     def _detect_language(self) -> None:
         """Detect system language or use ENVIRONMENT variable."""
         env_lang = os.getenv(EnvVar.LANGUAGE)
         if env_lang:
-            self._current_lang = env_lang
-            log.debug(f"Language set from env: {self._current_lang}")
+            normalized = self._normalize_lang(env_lang)
+            if normalized:
+                self._current_lang = normalized
+                log.debug(f"Language set from env: {self._current_lang}")
+                return
+            log.warning(
+                f"Unsupported {EnvVar.LANGUAGE}={env_lang!r}; fallback to {self._current_lang}"
+            )
             return
 
         try:
@@ -33,14 +64,10 @@ class I18n:
                     lang_env.split(".")[0].replace("-", "_") if lang_env else None
                 )
             if sys_lang_code:
-                normalized_lang = sys_lang_code.replace("-", "_").lower()
-                # Map system locale to our supported locales
-                if normalized_lang.startswith("zh") or "chinese" in normalized_lang:
-                    self._current_lang = "zh_CN"
-                elif normalized_lang.startswith("en") or "english" in normalized_lang:
-                    self._current_lang = "en_US"
-                else:
-                    self._current_lang = "en_US"  # Default fallback
+                normalized_sys = self._normalize_lang(sys_lang_code)
+                self._current_lang = normalized_sys or (
+                    "en_US" if "en_US" in self._locales else self._current_lang
+                )
                 log.debug(
                     f"Detected system language: {sys_lang_code}, using: {self._current_lang}"
                 )

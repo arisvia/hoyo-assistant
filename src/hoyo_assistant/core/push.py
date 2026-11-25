@@ -5,11 +5,14 @@ import hmac
 import inspect
 import re
 import time
+from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any, Final, cast
 from urllib.parse import quote_plus
 
-from . import StatusCode, http, log, setting, t
+from . import StatusCode, http, is_push_enabled, log, setting, t
+from .constants import PUSH_NTFY_DEFAULT_URL, PUSH_PUSHME_URL
+from .models import AccountRunResult
 
 # =============================================================================
 # Push Provider Endpoint & Branding Constants
@@ -18,7 +21,6 @@ PUSH_APP_NAME: Final[str] = "HoyoAssistant"
 PUSH_REPO_URL: Final[str] = "https://github.com/arisvia/hoyo-assistant"
 PUSH_FTQQ_BASE: Final[str] = "https://sctapi.ftqq.com"
 PUSH_PUSHPLUS_URL: Final[str] = "https://www.pushplus.plus/send"
-PUSH_PUSHME_URL: Final[str] = "https://push.i-i.me/"
 PUSH_SMTP_BG_API: Final[str] = "https://www.loliapi.com/acg/pc/"
 PUSH_WECOM_TOKEN_URL: Final[str] = "https://qyapi.weixin.qq.com/cgi-bin/gettoken"
 PUSH_WECOM_SEND_URL: Final[str] = "https://qyapi.weixin.qq.com/cgi-bin/message/send"
@@ -26,7 +28,6 @@ PUSH_BARK_ICON_BASE: Final[str] = "https://cdn.jsdelivr.net/gh/tanmx/pic@main/mi
 PUSH_IFTTT_BASE: Final[str] = "https://maker.ifttt.com/trigger"
 PUSH_QMSG_BASE: Final[str] = "https://qmsg.zendee.cn/send"
 PUSH_WXPUSHER_URL: Final[str] = "https://wxpusher.zjiecode.com/api/send/message"
-PUSH_NTFY_DEFAULT_URL: Final[str] = "https://ntfy.sh"
 
 _STATUS_TITLE_KEYS: Final[dict[int, str]] = {
     -99: "push.status_missing_dep",
@@ -52,6 +53,24 @@ def get_push_title(status_id: int) -> str:
     return t(key)
 
 
+def _aggregate_status(statuses: list[int]) -> int:
+    """Compute combined status code across multiple account results."""
+    if not statuses:
+        return StatusCode.SUCCESS.value
+    if all(s == StatusCode.FAILURE for s in statuses):
+        return StatusCode.FAILURE.value
+    if any(s in (StatusCode.FAILURE, StatusCode.PARTIAL_FAILURE) for s in statuses):
+        return StatusCode.PARTIAL_FAILURE.value
+    if any(s == StatusCode.CAPTCHA_TRIGGERED for s in statuses):
+        return StatusCode.CAPTCHA_TRIGGERED.value
+    return StatusCode.SUCCESS.value
+
+
+def _format_bucket_message(items: list[AccountRunResult]) -> str:
+    """Format one or more account results into a unified notification body."""
+    return "\n\n---\n\n".join(f"【{item.name}】\n{item.message}" for item in items)
+
+
 class PushHandler:
     def __init__(self) -> None:
         self.http = http  # Use global async http
@@ -60,17 +79,10 @@ class PushHandler:
         """Get the push dictionary from the global config."""
         return cast(dict[str, Any], setting.config.get("push", {}))
 
-    def get_channels(self) -> dict[str, Any]:
-        """Get configured channels mapping from push config."""
-        channels = self.get_cfg().get("channels")
-        return cast(dict[str, Any], channels) if isinstance(channels, dict) else {}
-
-    def get_val(self, section: str, key: str, default: Any = None) -> Any:
-        """Get a value from a specific push channel configuration."""
-        sec_cfg = self.get_channels().get(section)
-        if isinstance(sec_cfg, dict):
-            return sec_cfg.get(key, default)
-        return default
+    def get_targets(self) -> dict[str, Any]:
+        """Get named push targets mapping from push config."""
+        targets = self.get_cfg().get("targets")
+        return cast(dict[str, Any], targets) if isinstance(targets, dict) else {}
 
     # 推送消息中屏蔽关键词
     def msg_replace(self, msg: Any) -> str:
@@ -103,29 +115,67 @@ class PushHandler:
         full_text = t("push.template_full", title=title, body=body)
         return title, body, full_text
 
-    async def telegram(self, status_id: int, push_message: str | None) -> None:
-        _, _, full_text = self._build_push_payload(status_id, push_message)
-        api_url = self.get_val("telegram", "api_url", "api.telegram.org")
-        bot_token = self.get_val("telegram", "bot_token", "")
-        chat_id = self.get_val("telegram", "chat_id", "")
-        url = f"https://{api_url}/bot{bot_token}/sendMessage"
-        await self.http.post(url=url, data={"chat_id": chat_id, "text": full_text})
+    async def _read_response(
+        self, resp: Any, provider: str
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Read response body safely and raise ValueError on HTTP >= 400."""
+        status = getattr(resp, "status", 200)
+        data: dict[str, Any] | None = None
+        raw_text = ""
 
-    async def ftqq(self, status_id: int, push_message: str | None) -> None:
+        with suppress(Exception):
+            parsed = await resp.json()
+            if isinstance(parsed, dict):
+                data = parsed
+
+        if data is None or (isinstance(status, int) and status >= 400):
+            with suppress(Exception):
+                raw_text = str(await resp.text() or "")
+
+        if isinstance(status, int) and status >= 400:
+            detail = raw_text or str(data or "")
+            raise ValueError(f"{provider} HTTP {status}: {detail}")
+        return data, raw_text
+
+    async def telegram(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
+        _, _, full_text = self._build_push_payload(status_id, push_message)
+        raw_api = str(cfg.get("api_url") or "api.telegram.org").strip().rstrip("/")
+        if not raw_api.startswith(("http://", "https://")):
+            raw_api = f"https://{raw_api}"
+        bot_token = cfg.get("bot_token", "")
+        chat_id = str(cfg.get("chat_id", ""))
+        url = f"{raw_api}/bot{bot_token}/sendMessage"
+        resp = await self.http.post(
+            url=url, data={"chat_id": chat_id, "text": full_text}
+        )
+        data, raw_text = await self._read_response(resp, "telegram")
+        if data is not None and data.get("ok") is False:
+            raise ValueError(f"telegram error: {data.get('description', raw_text)}")
+
+    async def ftqq(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """Server酱推送，具体推送位置在server酱后台配置"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        sendkey = self.get_val("ftqq", "sendkey", "")
-        await self.http.post(
+        sendkey = cfg.get("sendkey", "")
+        resp = await self.http.post(
             url=f"{PUSH_FTQQ_BASE}/{sendkey}.send",
             data={"title": title, "desp": body},
         )
+        data, raw_text = await self._read_response(resp, "ftqq")
+        if data is not None and data.get("code") not in (None, 0):
+            raise ValueError(f"ftqq error: {data.get('message', raw_text)}")
 
-    async def pushplus(self, status_id: int, push_message: str | None) -> None:
+    async def pushplus(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """PushPlus推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        token = self.get_val("pushplus", "token", "")
-        topic = self.get_val("pushplus", "topic", "")
-        await self.http.post(
+        token = cfg.get("token", "")
+        topic = cfg.get("topic", "")
+        resp = await self.http.post(
             url=PUSH_PUSHPLUS_URL,
             data={
                 "token": token,
@@ -134,13 +184,18 @@ class PushHandler:
                 "topic": topic,
             },
         )
+        data, raw_text = await self._read_response(resp, "pushplus")
+        if data is not None and data.get("code") not in (None, 200):
+            raise ValueError(f"pushplus error: {data.get('msg', raw_text)}")
 
-    async def pushme(self, status_id: int, push_message: str | None) -> None:
+    async def pushme(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> bool:
         """PushMe推送"""
-        pushme_key = self.get_val("pushme", "token", "")
+        pushme_key = cfg.get("token", "")
         if not pushme_key:
             log.error(t("push.pushme_key_missing"))
-            return
+            return False
         log.info(t("push.pushme_start"))
         title, body, _ = self._build_push_payload(status_id, push_message)
         data = {
@@ -151,24 +206,27 @@ class PushHandler:
             "type": "",
         }
         log.debug(f"PushMe 请求数据: {data}")
-        url = self.get_val("pushme", "url", PUSH_PUSHME_URL)
+        url = cfg.get("url") or PUSH_PUSHME_URL
         response = await self.http.post(url=url, data=data)
         log.debug(f"PushMe 响应状态码: {response.status}")
         text = await response.text()
         log.debug(f"PushMe 响应内容: {text}")
         if response.status == 200 and text == "success":
             log.info(t("push.pushme_success"))
-        else:
-            log.error(t("push.pushme_fail", status=response.status, text=text))
+            return True
+        log.error(t("push.pushme_fail", status=response.status, text=text))
+        return False
 
-    async def cqhttp(self, status_id: int, push_message: str | None) -> None:
+    async def cqhttp(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> bool:
         """OneBot V11 (CqHttp) 协议推送"""
-        qq = self.get_val("cqhttp", "qq", None)
-        group = self.get_val("cqhttp", "group", None)
+        qq = cfg.get("qq")
+        group = cfg.get("group")
 
-        if qq and group:
+        if (qq and group) or (not qq and not group):
             log.error(t("push.cqhttp_config_err"))
-            return
+            return False
 
         _, _, full_text = self._build_push_payload(status_id, push_message)
         data: dict[str, Any] = {"message": full_text}
@@ -177,13 +235,20 @@ class PushHandler:
         if group:
             data["group_id"] = int(group)
 
-        url = self.get_val("cqhttp", "url", "")
-        await self.http.post(url=url, json=data)
+        url = cfg.get("url", "")
+        resp = await self.http.post(url=url, json=data)
+        await self._read_response(resp, "cqhttp")
+        return True
 
-    async def smtp(self, status_id: int, push_message: str | None) -> None:
+    async def smtp(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """SMTP 电子邮件推送"""
         import smtplib
+        from email.header import Header
         from email.mime.text import MIMEText
+        from email.utils import formataddr
+        from pathlib import Path
 
         title, body, _ = self._build_push_payload(status_id, push_message)
 
@@ -209,15 +274,14 @@ class PushHandler:
             return ""
 
         image_url = None
-        background = self.get_val("smtp", "background", False)
-        if background:
+        if cfg.get("background", False):
             image_url = await get_background_url()
 
         def send_sync() -> None:
-            try:
-                with open("assets/email_example.html", encoding="utf-8") as f:
-                    email_template = f.read()
-            except FileNotFoundError:
+            template_file = Path("assets/email_example.html")
+            if template_file.is_file():
+                email_template = template_file.read_text(encoding="utf-8")
+            else:
                 email_template = "{title}<br>{message}<br>{background_info}"
 
             message = email_template.format(
@@ -227,65 +291,67 @@ class PushHandler:
                 background_info=get_background_img_info(image_url),
             )
             msg_mime = MIMEText(message, "html", "utf-8")
-            subject = self.get_val("smtp", "subject", "")
-            toaddr = self.get_val("smtp", "toaddr", "")
-            fromaddr = self.get_val("smtp", "fromaddr", "")
-            msg_mime["Subject"] = subject
+            subject = str(cfg.get("subject", ""))
+            toaddr = str(cfg.get("toaddr", ""))
+            fromaddr = str(cfg.get("fromaddr", ""))
+            msg_mime["Subject"] = str(Header(subject, "utf-8"))
             msg_mime["To"] = toaddr
-            msg_mime["From"] = f"{subject}<{fromaddr}>"
+            msg_mime["From"] = formataddr((str(Header(subject, "utf-8")), fromaddr))
 
-            mailhost = self.get_val("smtp", "mailhost", "")
-            port = int(self.get_val("smtp", "port", 465))
-            username = self.get_val("smtp", "username", "")
-            password = self.get_val("smtp", "password", "")
+            mailhost = str(cfg.get("mailhost", ""))
+            port = int(cfg.get("port", 465))
+            username = str(cfg.get("username", ""))
+            password = str(cfg.get("password", ""))
 
-            server: smtplib.SMTP
-            ssl_enable = self.get_val("smtp", "ssl_enable", True)
-            if ssl_enable:
-                server = smtplib.SMTP_SSL(mailhost, port)
-            else:
-                server = smtplib.SMTP(mailhost, port)
-            server.login(username, password)
-            server.sendmail(fromaddr, toaddr, msg_mime.as_string())
-            server.close()
+            smtp_cls = smtplib.SMTP_SSL if cfg.get("ssl_enable", True) else smtplib.SMTP
+            with smtp_cls(mailhost, port) as server:
+                server.login(username, password)
+                server.sendmail(fromaddr, toaddr, msg_mime.as_string())
             log.info(t("push.smtp_success"))
 
         await asyncio.to_thread(send_sync)
 
-    async def wecom(self, status_id: int, push_message: str | None) -> None:
+    async def wecom(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """企业微信推送"""
-        secret = self.get_val("wecom", "secret", "")
-        corpid = self.get_val("wecom", "wechat_id", "")
-        touser = self.get_val("wecom", "touser", "@all")
+        secret = cfg.get("secret", "")
+        corpid = cfg.get("wechat_id", "")
+        touser = cfg.get("touser", "@all")
 
         _, _, full_text = self._build_push_payload(status_id, push_message)
         token_resp = await self.http.post(
             url=f"{PUSH_WECOM_TOKEN_URL}?corpid={corpid}&corpsecret={secret}",
             data="",
         )
-        token_data = await token_resp.json()
-        push_token = token_data.get("access_token")
+        token_data, raw_tok = await self._read_response(token_resp, "wecom")
+        push_token = (token_data or {}).get("access_token")
         if not push_token:
             raise ValueError(
-                f"WeCom token fetch failed: {token_data.get('errmsg', token_data)}"
+                f"WeCom token fetch failed: {(token_data or {}).get('errmsg', raw_tok)}"
             )
         push_data = {
-            "agentid": self.get_val("wecom", "agentid", ""),
+            "agentid": cfg.get("agentid", ""),
             "msgtype": "text",
             "touser": touser,
             "text": {"content": full_text},
             "safe": 0,
         }
-        await self.http.post(
+        send_resp = await self.http.post(
             f"{PUSH_WECOM_SEND_URL}?access_token={push_token}",
             json=push_data,
         )
+        send_data, raw_send = await self._read_response(send_resp, "wecom")
+        if send_data is not None and send_data.get("errcode") not in (None, 0):
+            raise ValueError(f"wecom error: {send_data.get('errmsg', raw_send)}")
 
-    async def wecomrobot(self, status_id: int, push_message: str | None) -> None:
+    async def wecomrobot(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """企业微信机器人"""
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        url = self.get_val("wecomrobot", "url", "")
-        mobile = self.get_val("wecomrobot", "mobile", [])
+        url = cfg.get("url", "")
+        mobile = cfg.get("mobile", [])
         mentioned = (
             [str(m).strip() for m in mobile if str(m).strip()]
             if isinstance(mobile, list)
@@ -302,15 +368,19 @@ class PushHandler:
                 "text": text_payload,
             },
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("errmsg")))
+        rep, _ = await self._read_response(resp, "wecomrobot")
+        if rep is not None and rep.get("errcode") not in (None, 0):
+            raise ValueError(f"wecomrobot error: {rep.get('errmsg', rep)}")
+        log.info(t("push.result", result=(rep or {}).get("errmsg")))
 
-    async def pushdeer(self, status_id: int, push_message: str | None) -> None:
+    async def pushdeer(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """PushDeer推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        api_url = str(self.get_val("pushdeer", "api_url", "")).rstrip("/")
-        token = self.get_val("pushdeer", "token", "")
-        await self.http.get(
+        api_url = str(cfg.get("api_url", "")).rstrip("/")
+        token = cfg.get("token", "")
+        resp = await self.http.get(
             url=f"{api_url}/message/push",
             params={
                 "pushkey": token,
@@ -320,12 +390,15 @@ class PushHandler:
             },
             use_cache=False,
         )
+        await self._read_response(resp, "pushdeer")
 
-    async def dingrobot(self, status_id: int, push_message: str | None) -> None:
+    async def dingrobot(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """钉钉群机器人推送"""
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        api_url = self.get_val("dingrobot", "webhook", "")
-        secret = self.get_val("dingrobot", "secret", "")
+        api_url = cfg.get("webhook", "")
+        secret = cfg.get("secret", "")
         if secret:
             timestamp = str(round(time.time() * 1000))
             sign_string = f"{timestamp}\n{secret}"
@@ -335,21 +408,26 @@ class PushHandler:
                 digestmod=hashlib.sha256,
             ).digest()
             sign = quote_plus(base64.b64encode(hmac_code))
-            api_url = f"{api_url}&timestamp={timestamp}&sign={sign}"
+            sep = "&" if "?" in api_url else "?"
+            api_url = f"{api_url}{sep}timestamp={timestamp}&sign={sign}"
 
         resp = await self.http.post(
             url=api_url,
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={"msgtype": "text", "text": {"content": full_text}},
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("errmsg")))
+        rep, _ = await self._read_response(resp, "dingrobot")
+        if rep is not None and rep.get("errcode") not in (None, 0):
+            raise ValueError(f"dingrobot error: {rep.get('errmsg', rep)}")
+        log.info(t("push.result", result=(rep or {}).get("errmsg")))
 
-    async def feishubot(self, status_id: int, push_message: str | None) -> None:
+    async def feishubot(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """飞书机器人(WebHook)，支持可选 secret 签名校验"""
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        api_url = self.get_val("feishubot", "webhook", "")
-        secret = self.get_val("feishubot", "secret", "")
+        api_url = cfg.get("webhook", "")
+        secret = cfg.get("secret", "")
         payload: dict[str, Any] = {
             "msg_type": "text",
             "content": {"text": full_text},
@@ -369,30 +447,36 @@ class PushHandler:
             headers={"Content-Type": "application/json; charset=utf-8"},
             json=payload,
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("msg")))
+        rep, _ = await self._read_response(resp, "feishubot")
+        if rep is not None and rep.get("code") not in (None, 0):
+            raise ValueError(f"feishubot error: {rep.get('msg', rep)}")
+        log.info(t("push.result", result=(rep or {}).get("msg")))
 
-    async def bark(self, status_id: int, push_message: str | None) -> None:
+    async def bark(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """Bark推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
         send_title = quote_plus(title)
         encoded_body = quote_plus(body)
-        api_url = str(self.get_val("bark", "api_url", "")).rstrip("/")
-        token = self.get_val("bark", "token", "")
-        icon = self.get_val("bark", "icon", "")
+        api_url = str(cfg.get("api_url", "")).rstrip("/")
+        token = cfg.get("token", "")
+        icon = cfg.get("icon", "")
         url = f"{api_url}/{token}/{send_title}/{encoded_body}"
         if icon:
             url = f"{url}?icon={PUSH_BARK_ICON_BASE}/{icon}.png"
         resp = await self.http.get(url=url, use_cache=False)
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("message")))
+        rep, _ = await self._read_response(resp, "bark")
+        log.info(t("push.result", result=(rep or {}).get("message")))
 
-    async def gotify(self, status_id: int, push_message: str | None) -> None:
+    async def gotify(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """Gotify推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        api_url = str(self.get_val("gotify", "api_url", "")).rstrip("/")
-        token = self.get_val("gotify", "token", "")
-        priority = int(self.get_val("gotify", "priority", 0))
+        api_url = str(cfg.get("api_url", "")).rstrip("/")
+        token = cfg.get("token", "")
+        priority = int(cfg.get("priority", 0))
         resp = await self.http.post(
             url=f"{api_url}/message?token={token}",
             headers={"Content-Type": "application/json; charset=utf-8"},
@@ -402,21 +486,23 @@ class PushHandler:
                 "priority": priority,
             },
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("errmsg")))
+        rep, _ = await self._read_response(resp, "gotify")
+        log.info(t("push.result", result=(rep or {}).get("errmsg")))
 
-    async def ifttt(self, status_id: int, push_message: str | None) -> int:
+    async def ifttt(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> int:
         """IFTTT推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        ifttt_event = self.get_val("ifttt", "event", "")
-        ifttt_key = self.get_val("ifttt", "key", "")
+        ifttt_event = cfg.get("event", "")
+        ifttt_key = cfg.get("key", "")
         rep = await self.http.post(
             url=f"{PUSH_IFTTT_BASE}/{ifttt_event}/with/key/{ifttt_key}",
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={"value1": title, "value2": body},
         )
         text = await rep.text()
-        if "errors" in text:
+        if getattr(rep, "status", 200) >= 400 or "errors" in text:
             try:
                 log.warning(t("push.ifttt_err", error=(await rep.json())["errors"]))
             except Exception:
@@ -425,35 +511,46 @@ class PushHandler:
         log.info(t("push.ifttt_done"))
         return 1
 
-    async def webhook(self, status_id: int, push_message: str | None) -> None:
+    async def webhook(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """Generic WebHook推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        webhook_url = self.get_val("webhook", "url", "")
+        webhook_url = cfg.get("url", "")
         resp = await self.http.post(
             url=webhook_url,
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={"title": title, "message": body},
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("errmsg")))
+        rep, raw_text = await self._read_response(resp, "webhook")
+        result_msg = (
+            rep.get("errmsg") or rep.get("msg") or rep.get("message")
+            if rep is not None
+            else (raw_text or f"HTTP {getattr(resp, 'status', 200)}")
+        )
+        log.info(t("push.result", result=result_msg))
 
-    async def qmsg(self, status_id: int, push_message: str | None) -> None:
+    async def qmsg(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """Qmsg酱推送"""
         _, _, full_text = self._build_push_payload(status_id, push_message)
-        key = self.get_val("qmsg", "key", "")
+        key = cfg.get("key", "")
         resp = await self.http.post(
             url=f"{PUSH_QMSG_BASE}/{key}",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             data={"msg": full_text},
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("reason")))
+        rep, _ = await self._read_response(resp, "qmsg")
+        log.info(t("push.result", result=(rep or {}).get("reason")))
 
-    async def discord(self, status_id: int, push_message: str | None) -> None:
+    async def discord(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> bool:
         """Discord Webhook 推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        webhook = self.get_val("discord", "webhook", "")
-        avatar_url = str(self.get_val("discord", "avatar_url", "") or "")
+        webhook = cfg.get("webhook", "")
+        avatar_url = str(cfg.get("avatar_url", "") or "")
         author: dict[str, Any] = {
             "name": PUSH_APP_NAME,
             "url": PUSH_REPO_URL,
@@ -483,40 +580,50 @@ class PushHandler:
             headers={"Content-Type": "application/json; charset=utf-8"},
             json=payload,
         )
-        if rep.status != 204:
+        if rep.status not in (200, 204):
             log.warning(t("push.discord_err", error=await rep.text()))
-        else:
-            log.info(t("push.discord_success", status=rep.status))
+            return False
+        log.info(t("push.discord_success", status=rep.status))
+        return True
 
-    def wintoast(self, status_id: int, push_message: str | None) -> None:
+    def wintoast(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> bool:
         try:
             toast = __import__("win11toast").toast
             title, body, _ = self._build_push_payload(status_id, push_message)
             toast(app_id=PUSH_APP_NAME, title=title, body=body, icon="")
+            return True
         except Exception:
             log.error(t("push.wintoast_err"))
+            return False
 
-    async def serverchan3(self, status_id: int, push_message: str | None) -> None:
+    async def serverchan3(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         title, body, _ = self._build_push_payload(status_id, push_message)
-        sendkey = self.get_val("serverchan3", "sendkey", "")
+        sendkey = cfg.get("sendkey", "")
         match = re.match(r"sctp(\d+)t", sendkey)
         if match:
             num = match.group(1)
             url = f"https://{num}.push.ft07.com/send/{sendkey}.send"
         else:
             raise ValueError(t("push.serverchan3_invalid_key"))
-        tags = self.get_val("serverchan3", "tags", "")
+        tags = cfg.get("tags", "")
         rep = await self.http.post(
             url=url, json={"title": title, "desp": body, "tags": tags}
         )
+        await self._read_response(rep, "serverchan3")
         log.debug(await rep.text())
 
-    async def wxpusher(self, status_id: int, push_message: str | None) -> None:
+    async def wxpusher(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """WxPusher HTTP REST API 推送"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        app_token = self.get_val("wxpusher", "app_token", "")
-        raw_uids = self.get_val("wxpusher", "uids", [])
-        raw_topics = self.get_val("wxpusher", "topic_ids", [])
+        app_token = cfg.get("app_token", "")
+        raw_uids = cfg.get("uids", [])
+        raw_topics = cfg.get("topic_ids", [])
         uids = (
             [str(u).strip() for u in raw_uids if str(u).strip()]
             if isinstance(raw_uids, list)
@@ -543,16 +650,16 @@ class PushHandler:
             headers={"Content-Type": "application/json; charset=utf-8"},
             json=payload,
         )
-        rep = await resp.json()
-        log.info(t("push.result", result=rep.get("msg")))
+        rep, _ = await self._read_response(resp, "wxpusher")
+        log.info(t("push.result", result=(rep or {}).get("msg")))
 
-    async def ntfy(self, status_id: int, push_message: str | None) -> None:
+    async def ntfy(
+        self, status_id: int, push_message: str | None, cfg: dict[str, Any]
+    ) -> None:
         """ntfy 推送通知"""
         title, body, _ = self._build_push_payload(status_id, push_message)
-        api_url = str(self.get_val("ntfy", "api_url", PUSH_NTFY_DEFAULT_URL)).rstrip(
-            "/"
-        )
-        topic = str(self.get_val("ntfy", "topic", "")).strip()
+        api_url = str(cfg.get("api_url", PUSH_NTFY_DEFAULT_URL)).rstrip("/")
+        topic = str(cfg.get("topic", "")).strip()
         if not topic:
             raise ValueError(t("push.ntfy_config_err"))
         encoded_title = (
@@ -562,9 +669,9 @@ class PushHandler:
         )
         req_headers: dict[str, str] = {
             "Title": encoded_title,
-            "Priority": str(self.get_val("ntfy", "priority", "default")),
+            "Priority": str(cfg.get("priority", "default")),
         }
-        token = self.get_val("ntfy", "token", "")
+        token = cfg.get("token", "")
         if token:
             req_headers["Authorization"] = f"Bearer {token}"
         resp = await self.http.post(
@@ -572,48 +679,142 @@ class PushHandler:
             headers=req_headers,
             data=body.encode("utf-8"),
         )
+        await self._read_response(resp, "ntfy")
         log.info(t("push.result", result=resp.status))
 
-    def _resolve_active_channels(self) -> list[str]:
-        """Return explicit active channels, or auto-detect all configured channels."""
-        cfg = self.get_cfg()
-        explicit = cfg.get("active") or []
-        if explicit:
-            return [str(name) for name in explicit]
-        channels = self.get_channels()
-        return [name for name, val in channels.items() if isinstance(val, dict)]
+    async def send_to_target(
+        self, target_name: str, status: int, push_message: str | None
+    ) -> bool:
+        """Dispatch a formatted message to a single named push target."""
+        target_cfg = self.get_targets().get(target_name)
+        if not isinstance(target_cfg, dict):
+            log.warning(t("push.server_err", name=target_name))
+            return False
 
-    async def push(self, status: int, push_message: str | None) -> int:
-        cfg = self.get_cfg()
-        if not cfg.get("enable", False):
+        provider = str(target_cfg.get("type") or "").strip()
+        func = getattr(self, provider, None)
+        if not func or not callable(func):
+            log.warning(t("push.server_err", name=provider or target_name))
+            return False
+
+        log.debug(t("push.service_name", name=f"{target_name} ({provider})"))
+        sanitized = self.msg_replace(push_message)
+        try:
+            if inspect.iscoroutinefunction(func):
+                res = await func(status, sanitized, target_cfg)
+            else:
+                res = func(status, sanitized, target_cfg)
+        except Exception as e:
+            log.warning(t("push.exec_fail", name=target_name, error=str(e)))
+            return False
+
+        if res is False or (provider == "ifttt" and res == 0):
+            return False
+        log.info(t("push.exec_done", name=target_name))
+        return True
+
+    async def dispatch_results(self, results: list[AccountRunResult]) -> int:
+        """Route per-account execution results to configured push targets."""
+        if not is_push_enabled() or not results:
             return 0
+
+        cfg = self.get_cfg()
+        error_only = bool(cfg.get("error_only", False))
+        merge = bool(cfg.get("merge", True))
+        default_targets = [
+            str(item).strip()
+            for item in (cfg.get("default") or [])
+            if str(item).strip()
+        ]
+
+        if merge:
+            buckets: dict[str, list[AccountRunResult]] = {}
+            for res in results:
+                resolved = (
+                    default_targets
+                    if res.push_targets is None
+                    else [str(x).strip() for x in res.push_targets if str(x).strip()]
+                )
+                for target_name in dict.fromkeys(resolved):
+                    buckets.setdefault(target_name, []).append(res)
+
+            if not buckets:
+                return 0
+
+            started = False
+            all_ok = True
+            for target_name, items in buckets.items():
+                target_status = _aggregate_status([item.status for item in items])
+                if error_only and target_status == StatusCode.SUCCESS:
+                    continue
+                if not started:
+                    log.info(t("push.execution_start"))
+                    started = True
+                if not await self.send_to_target(
+                    target_name, target_status, _format_bucket_message(items)
+                ):
+                    all_ok = False
+            return 0 if all_ok else 1
+
+        started = False
+        all_ok = True
+        for res in results:
+            if error_only and res.status == StatusCode.SUCCESS:
+                continue
+            resolved = (
+                default_targets
+                if res.push_targets is None
+                else [str(x).strip() for x in res.push_targets if str(x).strip()]
+            )
+            for target_name in dict.fromkeys(resolved):
+                if not started:
+                    log.info(t("push.execution_start"))
+                    started = True
+                if not await self.send_to_target(
+                    target_name, res.status, f"【{res.name}】\n{res.message}"
+                ):
+                    all_ok = False
+        return 0 if all_ok else 1
+
+    async def push(
+        self,
+        status: int,
+        push_message: str | None,
+        targets: list[str] | None = None,
+    ) -> int:
+        if not is_push_enabled():
+            return 0
+        cfg = self.get_cfg()
         if cfg.get("error_only", False) and status == StatusCode.SUCCESS:
             return 0
+
+        raw_targets = targets if targets is not None else (cfg.get("default") or [])
+        resolved = list(
+            dict.fromkeys(
+                str(name).strip() for name in raw_targets if str(name).strip()
+            )
+        )
+        if not resolved:
+            return 0
+
         log.info(t("push.execution_start"))
-        active_channels = self._resolve_active_channels()
-        push_success = True
-        for func_name in active_channels:
-            func = getattr(self, func_name, None)
-            if not func:
-                log.warning(t("push.server_err", name=func_name))
-                continue
-            log.debug(t("push.service_name", name=func_name))
-            try:
-                if inspect.iscoroutinefunction(func):
-                    await func(status, self.msg_replace(push_message))
-                else:
-                    func(status, self.msg_replace(push_message))
-            except Exception as e:
-                log.warning(t("push.exec_fail", name=func_name, error=str(e)))
-                push_success = False
-                continue
-            log.info(t("push.exec_done", name=func_name))
-        return 0 if push_success else 1
+        all_ok = True
+        for target_name in resolved:
+            if not await self.send_to_target(target_name, status, push_message):
+                all_ok = False
+        return 0 if all_ok else 1
 
 
-async def async_push(status: int, push_message: str | None) -> int:
-    push_handler_instance = PushHandler()
-    return await push_handler_instance.push(status, push_message)
+async def async_push(
+    status: int,
+    push_message: str | None,
+    targets: list[str] | None = None,
+) -> int:
+    return await PushHandler().push(status, push_message, targets=targets)
+
+
+async def dispatch_push(results: list[AccountRunResult]) -> int:
+    return await PushHandler().dispatch_results(results)
 
 
 # Export async_push as push for callers using await

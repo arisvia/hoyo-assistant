@@ -56,8 +56,13 @@ def setup_logger(
     logger.remove()
 
     # Determine Log Directory
-    # Priority: explicit arg > env var > CWD/logs
-    default_log_dir = os.path.join(os.getcwd(), "logs")
+    # Priority: explicit arg > env var > exe_dir/logs (frozen) or CWD/logs
+    if getattr(sys, "frozen", False):
+        default_log_dir = os.path.join(
+            os.path.dirname(os.path.abspath(sys.executable)), "logs"
+        )
+    else:
+        default_log_dir = os.path.join(os.getcwd(), "logs")
     if log_dir is None:
         log_dir = os.environ.get(EnvVar.LOG_DIR, default_log_dir)
 
@@ -126,6 +131,7 @@ def setup_logger(
 
 
 _env_log_level = os.environ.get(EnvVar.LOG_LEVEL, "INFO").upper()
-setup_logger(_env_log_level)
+# Defer file log creation until setup_logger() is explicitly configured (e.g. after CLI args parse)
+setup_logger(_env_log_level, file_enable=False)
 
 log = logger

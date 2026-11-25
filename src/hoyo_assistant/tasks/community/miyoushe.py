@@ -3,11 +3,9 @@ import json
 import random
 from typing import Any, cast
 
-from ...core import StokenError, captcha, config, http, log, login, setting, t, tools
+from ...core import StokenError, http, log, login, setting, t, tools
 from ...core.constants import (
-    API_BBS_CAPTCHA_VERIFY,
     API_BBS_GAME_LIST,
-    API_BBS_GET_CAPTCHA,
     API_BBS_SIGN,
     API_BBS_TASKS_LIST,
     BBS_API_HOST,
@@ -25,6 +23,7 @@ from ...core.constants import (
     REFERER_MIHOYO_APP,
     RetCode,
 )
+from ...core.models import TaskReport
 
 
 async def wait() -> None:
@@ -62,7 +61,7 @@ class Mihoyobbs:
         self.today_get_coins = 0
         self.today_have_get_coins = 0
         self.have_coins = 0
-        cn_cfg = config["cn"]
+        cn_cfg = setting.get_account()
         self.bbs_config = cn_cfg["bbs"]
         self._unknown_forum_ids: list[int] = []
         tmp_list: list[dict[str, Any]] = []
@@ -74,7 +73,7 @@ class Mihoyobbs:
                 self._unknown_forum_ids.append(int(i))
         self.bbs_list: list[dict[str, Any]] = tmp_list
         cookie = cn_cfg.get("cookie", "")
-        device_cfg = config["client"]["device"]
+        device_cfg = cn_cfg.get("device") or {}
         device_id = device_cfg.get("id") or (
             tools.get_device_id(cookie) if cookie else ""
         )
@@ -86,8 +85,8 @@ class Mihoyobbs:
             "x-rpc-sys_version": MIHOYOBBS_SYS_VERSION,
             "x-rpc-channel": MIHOYOBBS_CHANNEL,
             "x-rpc-device_id": device_id,
-            "x-rpc-device_name": device_cfg["name"],
-            "x-rpc-device_model": device_cfg["model"],
+            "x-rpc-device_name": device_cfg.get("name", ""),
+            "x-rpc-device_model": device_cfg.get("model", ""),
             "x-rpc-h265_supported": "1",
             "Referer": REFERER_MIHOYO_APP,
             "x-rpc-verify_key": MIHOYOBBS_VERIFY_KEY,
@@ -101,18 +100,21 @@ class Mihoyobbs:
         self.task_header = {
             "Accept": "application/json, text/plain, */*",
             "Origin": ORIGIN_MIHOYO_WEBSTATIC,
-            "User-Agent": tools.resolve_user_agent(config["client"]["user_agent"]),
+            "User-Agent": tools.resolve_user_agent(cn_cfg.get("user_agent", "")),
             "Referer": ORIGIN_MIHOYO_WEBSTATIC,
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": MIHOYOBBS_ACCEPT_LANGUAGE,
             "X-Requested-With": MIHOYOBBS_X_REQUESTED_WITH,
-            "Cookie": cookie,
+            "Cookie": login.get_web_cookie(),
         }
         if device_cfg.get("fp"):
             self.headers["x-rpc-device_fp"] = device_cfg["fp"]
         self.task_do = {
             "sign": False,
         }
+        self._sign_error = False
+        self._sign_captcha = False
+        self._sign_captcha_all = False
 
     async def sync_unknown_forums(self) -> None:
         """Resolve forum IDs not in the built-in table via the live MiYoUShe game list."""
@@ -132,38 +134,6 @@ class Mihoyobbs:
         await self.sync_unknown_forums()
         await self.get_tasks_list()
 
-    async def get_pass_challenge(self) -> str | None:
-        header = self.headers.copy()
-        header["DS"] = tools.get_ds(web=False)
-        req = await http.get(url=API_BBS_GET_CAPTCHA, headers=header, use_cache=False)
-        data = await req.json()
-        if data["retcode"] != RetCode.OK:
-            return None
-        captcha_result = captcha.bbs_captcha(
-            data["data"]["gt"], data["data"]["challenge"]
-        )
-        if captcha_result is not None:
-            challenge = data["data"]["challenge"]
-            if isinstance(captcha_result, dict):
-                validate = captcha_result["validate"]
-                challenge = captcha_result["challenge"]
-            else:
-                validate = captcha_result  # type: ignore[unreachable]
-            header["DS"] = tools.get_ds(web=False)
-            check_req = await http.post(
-                url=API_BBS_CAPTCHA_VERIFY,
-                headers=header,
-                json={
-                    "geetest_challenge": challenge,
-                    "geetest_seccode": validate + "|jordan",
-                    "geetest_validate": validate,
-                },
-            )
-            check = await check_req.json()
-            if check["retcode"] == RetCode.OK:
-                return cast(str, check["data"]["challenge"])
-        return None
-
     async def get_tasks_list(self, update: bool = False) -> None:
         log.info(t("mihoyobbs.get_tasks"))
         req = await http.get(
@@ -173,14 +143,23 @@ class Mihoyobbs:
             use_cache=False,
         )
         data = await req.json()
-        message = str(data.get("message") or "")
-        if "err" in message or data["retcode"] == RetCode.UNAUTHORIZED:
+        retcode = data.get("retcode", -1) if isinstance(data, dict) else -1
+        message = str(data.get("message") or "") if isinstance(data, dict) else ""
+        if retcode == RetCode.UNAUTHORIZED or "err" in message.lower():
             if not update and await login.update_cookie_token():
-                self.task_header["Cookie"] = config["cn"]["cookie"]
+                self.task_header["Cookie"] = login.get_web_cookie()
                 return await self.get_tasks_list(True)
             log.error(t("mihoyobbs.get_tasks_fail"))
-            await setting.clear_cookie()
-            raise StokenError(t("account.stoken_error"))
+            if retcode == RetCode.UNAUTHORIZED:
+                await setting.clear_stoken()
+                raise StokenError(t("account.stoken_error"))
+            raise RuntimeError(
+                message or f"MiYoUShe task list error (retcode={retcode})"
+            )
+        if retcode != RetCode.OK or not isinstance(data.get("data"), dict):
+            raise RuntimeError(
+                message or f"MiYoUShe task list failed (retcode={retcode})"
+            )
         self.today_get_coins = data["data"]["can_get_points"]
         self.today_have_get_coins = data["data"]["already_received_points"]
         self.have_coins = data["data"]["total_points"]
@@ -218,9 +197,16 @@ class Mihoyobbs:
             log.info(t("mihoyobbs.task_done"))
             return
         log.info(t("mihoyobbs.signing"))
+        self._sign_error = False
+        self._sign_captcha = False
+        self._sign_captcha_all = False
+        if not self.bbs_list:
+            return
+        captcha_count = 0
+        success_count = 0
         header = self.headers.copy()
         for forum in self.bbs_list:
-            challenge = None
+            forum_failed = False
             for _retry_count in range(2):
                 post_data = json.dumps({"gids": forum["id"]}).replace(" ", "")
                 header["DS"] = tools.get_ds2("", post_data)
@@ -230,9 +216,11 @@ class Mihoyobbs:
                 message = str(data.get("message") or "")
                 if data["retcode"] == RetCode.CAPTCHA_TRIGGERED:
                     log.warning(t("mihoyobbs.sign_captcha"))
-                    challenge = await self.get_pass_challenge()
-                    if challenge is not None:
-                        header["x-rpc-challenge"] = challenge
+                    self._sign_captcha = True
+                    captcha_count += 1
+                    await wait()
+                    forum_failed = False
+                    break
                 elif "err" not in message and data["retcode"] == RetCode.OK:
                     log.info(
                         t(
@@ -241,7 +229,9 @@ class Mihoyobbs:
                             message=message or "OK",
                         )
                     )
+                    success_count += 1
                     await wait()
+                    forum_failed = False
                     break
                 elif data["retcode"] == RetCode.UNAUTHORIZED:
                     log.error(t("mihoyobbs.sign_cookie_expired"))
@@ -249,10 +239,16 @@ class Mihoyobbs:
                     raise StokenError(t("account.stoken_error"))
                 else:
                     log.error(t("mihoyobbs.sign_unknown_error", error=await req.text()))
-            if challenge is not None:
-                header.pop("x-rpc-challenge")
+                    forum_failed = True
+            if forum_failed:
+                self._sign_error = True
+        self._sign_captcha_all = (
+            success_count == 0
+            and not self._sign_error
+            and captcha_count == len(self.bbs_list)
+        )
 
-    async def run_task(self) -> str:
+    async def run_task(self) -> TaskReport:
         await self.init()
         return_data = "米游社: "
         if self.task_do["sign"]:
@@ -262,14 +258,16 @@ class Mihoyobbs:
                 total=self.have_coins,
             )
             log.info(summary)
-            return return_data + summary
+            return TaskReport(return_data + summary, had_error=False, had_success=True)
 
         i = 0
-        while self.today_get_coins != 0 and i < 2:
+        while self.bbs_list and self.today_get_coins != 0 and i < 2:
             if i > 0:
                 await wait()
             if self.bbs_config["enable"]:
                 await self.signing()
+            if self._sign_captcha_all:
+                break
             await self.get_tasks_list()
             i += 1
 
@@ -280,5 +278,11 @@ class Mihoyobbs:
             total=self.have_coins,
         )
         log.info(summary)
-        await wait()
-        return return_data + summary
+        if not self._sign_captcha_all:
+            await wait()
+        return TaskReport(
+            return_data + summary,
+            had_error=self._sign_error,
+            had_success=not self._sign_error,
+            had_captcha=self._sign_captcha,
+        )
